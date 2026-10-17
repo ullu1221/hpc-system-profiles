@@ -1,0 +1,2 @@
+# Transparent elevation for HPC System Performance Profile Controller
+p ALL=(ALL) NOPASSWD: /usr/local/bin/hpc-perf, /home/p/.local/bin/hpc-perf
