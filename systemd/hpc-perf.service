@@ -1,7 +1,8 @@
 [Unit]
 Description=HPC Deterministic System Performance Profile Boot Restorer
 Documentation=https://github.com/ullu1221/hpc-system-profiles
-After=network.target power-profiles-daemon.service dell-g15-thermal.service
+After=dell-g15-thermal.service power-profiles-daemon.service
+Wants=dell-g15-thermal.service
 
 [Service]
 Type=oneshot
@@ -14,4 +15,4 @@ ProtectHome=no
 PrivateTmp=yes
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=graphical.target
