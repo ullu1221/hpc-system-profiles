@@ -36,7 +36,9 @@ pub fn check_vm_readiness() -> VmReadiness {
     let hugepages_configured = hugepages_1g > 0 || hugepages_2m > 0;
 
     let lg_path = "/dev/shm/looking-glass";
-    let looking_glass_ready = Path::new(lg_path).exists();
+    let looking_glass_ready = Path::new(lg_path).metadata()
+        .map(|m| m.len() >= 32 * 1024 * 1024)
+        .unwrap_or(false);
 
     VmReadiness {
         iommu_enabled,
@@ -48,9 +50,31 @@ pub fn check_vm_readiness() -> VmReadiness {
     }
 }
 
+pub fn set_hugepages_2m(count: u32) -> Result<(), AppError> {
+    let path = "/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages";
+    if Path::new(path).exists() {
+        fs::write(path, count.to_string())?;
+    }
+    Ok(())
+}
+
+pub fn get_hugepages_2m() -> u32 {
+    fs::read_to_string("/sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0)
+}
+
 pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     let lg_path = "/dev/shm/looking-glass";
     
+    // Resolve target desktop user if invoked as root
+    let actual_user = if username == "root" {
+        std::env::var("SUDO_USER").unwrap_or_else(|_| "p".to_string())
+    } else {
+        username.to_string()
+    };
+
     // Create and pre-allocate 32MB IVSHMEM buffer
     let file = fs::OpenOptions::new()
         .create(true)
@@ -65,12 +89,12 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     let _ = std::process::Command::new("chmod").args(["0660", lg_path]).output();
 
     // Dynamically check if group 'kvm' exists; fallback to username primary group
-    let group = if Path::new("/dev/kvm").exists() { "kvm" } else { username };
-    let _ = std::process::Command::new("chown").args([&format!("{}:{}", username, group), lg_path]).output();
+    let group = if Path::new("/dev/kvm").exists() { "kvm" } else { &actual_user };
+    let _ = std::process::Command::new("chown").args([&format!("{}:{}", actual_user, group), lg_path]).output();
 
     // Persist via systemd-tmpfiles
     let tmpfile_conf = "/etc/tmpfiles.d/10-looking-glass.conf";
-    let content = format!("f /dev/shm/looking-glass 0660 {} {} 32M\n", username, group);
+    let content = format!("f /dev/shm/looking-glass 0660 {} {} -\n", actual_user, group);
     if let Ok(_) = fs::write(tmpfile_conf, content) {
         let _ = std::process::Command::new("systemd-tmpfiles").args(["--create"]).output();
     }

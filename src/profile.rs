@@ -151,13 +151,20 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     // 8. PCIe ASPM Hardware Clamping (eliminates L0s/L1 bus sleep stalls)
     let _ = kernel::clamp_pcie_aspm(clamp_cstates);
 
-    // 9. VM Gaming Specific Setup (Looking Glass SHMEM)
-    let mut lg_ready = Path::new("/dev/shm/looking-glass").exists();
+    // 9. VM Gaming Specific Setup (Looking Glass SHMEM & HugePages)
+    let mut lg_ready = Path::new("/dev/shm/looking-glass").metadata()
+        .map(|m| m.len() >= 32 * 1024 * 1024)
+        .unwrap_or(false);
     if profile == Profile::VmGaming {
         let username = std::env::var("SUDO_USER")
             .unwrap_or_else(|_| std::env::var("USER").unwrap_or_else(|_| "p".to_string()));
         let _ = vm::setup_looking_glass_shmem(&username);
-        lg_ready = Path::new("/dev/shm/looking-glass").exists();
+        let _ = vm::set_hugepages_2m(4096);
+        lg_ready = Path::new("/dev/shm/looking-glass").metadata()
+            .map(|m| m.len() >= 32 * 1024 * 1024)
+            .unwrap_or(false);
+    } else {
+        let _ = vm::set_hugepages_2m(0);
     }
 
     // Persist configuration

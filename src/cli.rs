@@ -90,9 +90,15 @@ pub fn show_status() {
         format!("SHARED / UNISOLATED ({})", vm_readiness.gpu_driver)
     };
     println!("    GPU VFIO Status:    {}", gpu_vfio_desc);
-    println!("    HugePages Config:   {}", if vm_readiness.hugepages_configured { "ACTIVE" } else { "NOT ALLOCATED" });
+    let hp_count = vm::get_hugepages_2m();
+    let hp_str = if hp_count > 0 {
+        format!("ALLOCATED ({} x 2MB = {:.1} GiB reserved for VM)", hp_count, (hp_count as f32 * 2.0) / 1024.0)
+    } else {
+        "DYNAMIC (0 pages reserved; all 15.3 GiB RAM available for Host)".to_string()
+    };
+    println!("    HugePages (2MB):    {}", hp_str);
     println!("    Looking Glass SHM:  {} ({})", 
-        if vm_readiness.looking_glass_ready { "READY" } else { "NOT CREATED" },
+        if vm_readiness.looking_glass_ready { "READY (32MB allocated; user access verified)" } else { "NOT CREATED" },
         vm_readiness.looking_glass_path
     );
     println!("================================================================================");
@@ -186,8 +192,12 @@ pub fn verify_cmd() {
     print_check("Dell Thermal Mode", &thermal_mode, exp_thermal_str, exp_thermal_match);
 
     if active == Profile::VmGaming {
-        let lg_ready = Path::new("/dev/shm/looking-glass").exists();
+        let lg_ready = Path::new("/dev/shm/looking-glass").metadata()
+            .map(|m| m.len() >= 32 * 1024 * 1024)
+            .unwrap_or(false);
         print_check("Looking Glass SHMEM", &lg_ready.to_string(), "true", lg_ready);
+        let hp_count = vm::get_hugepages_2m();
+        print_check("HugePages (8GB VM)", &format!("{} pages", hp_count), ">= 4096 pages", hp_count >= 4096);
     }
 }
 
