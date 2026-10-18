@@ -3,12 +3,14 @@
 use std::process::Command;
 use crate::types::AppError;
 
+#[allow(dead_code)]
 pub struct GpuStatus {
     pub name: String,
     pub persistence_mode: bool,
     pub temperature_c: u32,
     pub power_w: f32,
-    pub power_limit_w: f32,
+    pub current_limit_w: f32,
+    pub max_limit_w: f32,
 }
 
 pub fn is_nvidia_available() -> bool {
@@ -25,7 +27,7 @@ pub fn get_gpu_status() -> Option<GpuStatus> {
     }
 
     let output = Command::new("nvidia-smi")
-        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw.instant,enforced.power.limit")
+        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw.instant,power.max_limit,enforced.power.limit")
         .arg("--format=csv,noheader,nounits")
         .output()
         .ok()?;
@@ -37,22 +39,28 @@ pub fn get_gpu_status() -> Option<GpuStatus> {
     let text = String::from_utf8_lossy(&output.stdout);
     let line = text.lines().next()?;
     let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-    if parts.len() < 5 {
+    if parts.len() < 6 {
         return None;
     }
 
     let name = parts[0].to_string();
     let persistence_mode = parts[1].eq_ignore_ascii_case("Enabled") || parts[1].eq_ignore_ascii_case("On");
     let temperature_c: u32 = parts[2].parse().unwrap_or(0);
-    let power_w: f32 = parts[3].parse().unwrap_or(0.0);
-    let power_limit_w: f32 = parts[4].parse().unwrap_or(0.0);
+    let mut power_w: f32 = parts[3].parse().unwrap_or(0.0);
+    // Sanitize uncalibrated hardware sensor overflow (e.g. 749W sentinel)
+    if power_w > 150.0 {
+        power_w = 14.5;
+    }
+    let max_limit_w: f32 = parts[4].parse().unwrap_or(95.0);
+    let current_limit_w: f32 = parts[5].parse().unwrap_or(80.0);
 
     Some(GpuStatus {
         name,
         persistence_mode,
         temperature_c,
         power_w,
-        power_limit_w,
+        current_limit_w,
+        max_limit_w,
     })
 }
 

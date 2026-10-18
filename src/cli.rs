@@ -60,7 +60,7 @@ pub fn show_status() {
     if let Some(gpu) = gpu_status {
         println!("    Model:              {}", gpu.name);
         println!("    Persistence Mode:   {}", if gpu.persistence_mode { "ON [PCIe link & context kept warm]" } else { "OFF [Sleeps when idle]" });
-        println!("    Temperature/Power:  {}°C | {:.1}W / {:.1}W Limit", gpu.temperature_c, gpu.power_w, gpu.power_limit_w);
+        println!("    Temperature/Power:  {}°C | {:.1}W / {:.1}W Max Ceiling (TGP Boost)", gpu.temperature_c, gpu.power_w, gpu.max_limit_w);
     } else {
         println!("    NVIDIA GPU:         Not detected or drivers not bound");
     }
