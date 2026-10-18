@@ -86,13 +86,28 @@ pub fn clamp_pcie_aspm(disable_aspm: bool) -> Result<usize, AppError> {
                                                 let _ = file.write_all(&new_bytes);
                                                 clamped += 1;
                                             }
-                                        } else if !disable_aspm && (lnk_ctl & 0x0002) == 0 {
-                                            let new_lnk_ctl = (lnk_ctl & !0x0003) | 0x0002;
-                                            let new_bytes = new_lnk_ctl.to_le_bytes();
-                                            use std::io::Seek;
-                                            if file.seek(std::io::SeekFrom::Start(lnk_ctl_offset as u64)).is_ok() {
-                                                let _ = file.write_all(&new_bytes);
-                                                clamped += 1;
+                                        } else if !disable_aspm {
+                                            let lnk_cap_offset = cap_ptr + 12;
+                                            let aspm_support = if lnk_cap_offset + 4 <= bytes_read {
+                                                let lnk_cap = u32::from_le_bytes([
+                                                    data[lnk_cap_offset],
+                                                    data[lnk_cap_offset + 1],
+                                                    data[lnk_cap_offset + 2],
+                                                    data[lnk_cap_offset + 3],
+                                                ]);
+                                                ((lnk_cap >> 10) & 0x0003) as u16
+                                            } else {
+                                                0x0003
+                                            };
+                                            let target_bits = if aspm_support != 0 { aspm_support } else { 0x0003 };
+                                            if (lnk_ctl & 0x0003) != target_bits {
+                                                let new_lnk_ctl = (lnk_ctl & !0x0003) | target_bits;
+                                                let new_bytes = new_lnk_ctl.to_le_bytes();
+                                                use std::io::Seek;
+                                                if file.seek(std::io::SeekFrom::Start(lnk_ctl_offset as u64)).is_ok() {
+                                                    let _ = file.write_all(&new_bytes);
+                                                    clamped += 1;
+                                                }
                                             }
                                         }
                                     }

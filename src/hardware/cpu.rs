@@ -167,7 +167,7 @@ pub fn get_topology() -> CpuTopology {
             .unwrap_or_else(|| vec![cpu_idx]);
 
         // P-cores on Raptor Lake HX are >= 4.0 GHz and have siblings (Hyper-Threading)
-        let is_p_core = max_mhz >= 4000.0;
+        let is_p_core = max_mhz >= 4000.0 || siblings.len() > 1;
         if is_p_core {
             p_cores.push(cpu_idx);
         } else {

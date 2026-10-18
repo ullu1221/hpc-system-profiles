@@ -3,13 +3,35 @@
 use std::process::Command;
 use crate::types::AppError;
 
+fn get_thermal_binaries() -> Vec<String> {
+    let mut bins = vec![
+        "g15-sentinel".to_string(),
+        "/usr/local/bin/g15-sentinel".to_string(),
+        "dell-g15-thermal".to_string(),
+        "/usr/local/bin/dell-g15-thermal".to_string(),
+    ];
+    if let Ok(home) = std::env::var("HOME") {
+        bins.push(format!("{}/.local/bin/g15-sentinel", home));
+        bins.push(format!("{}/.local/bin/dell-g15-thermal", home));
+    }
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        bins.push(format!("/home/{}/.local/bin/g15-sentinel", user));
+        bins.push(format!("/home/{}/.local/bin/dell-g15-thermal", user));
+    }
+    bins
+}
+
 pub fn get_thermal_mode() -> Option<String> {
-    let output = Command::new("g15-sentinel").arg("status").output().ok().filter(|o| o.status.success())
-        .or_else(|| Command::new("/usr/local/bin/g15-sentinel").arg("status").output().ok().filter(|o| o.status.success()))
-        .or_else(|| Command::new("/home/p/.local/bin/g15-sentinel").arg("status").output().ok().filter(|o| o.status.success()))
-        .or_else(|| Command::new("dell-g15-thermal").arg("status").output().ok().filter(|o| o.status.success()))
-        .or_else(|| Command::new("/usr/local/bin/dell-g15-thermal").arg("status").output().ok().filter(|o| o.status.success()))
-        .or_else(|| Command::new("/home/p/.local/bin/dell-g15-thermal").arg("status").output().ok().filter(|o| o.status.success()))?;
+    let mut output = None;
+    for bin in get_thermal_binaries() {
+        if let Ok(out) = Command::new(&bin).arg("status").output() {
+            if out.status.success() {
+                output = Some(out);
+                break;
+            }
+        }
+    }
+    let output = output?;
 
     let text = String::from_utf8_lossy(&output.stdout);
     let mut mode_str = String::new();
@@ -40,17 +62,10 @@ pub fn get_thermal_mode() -> Option<String> {
 }
 
 pub fn set_thermal_mode(mode: &str) -> Result<(), AppError> {
-    let binaries = [
-        "g15-sentinel",
-        "/usr/local/bin/g15-sentinel",
-        "/home/p/.local/bin/g15-sentinel",
-        "dell-g15-thermal",
-        "/usr/local/bin/dell-g15-thermal",
-        "/home/p/.local/bin/dell-g15-thermal",
-    ];
+    let binaries = get_thermal_binaries();
 
     let mut last_error = None;
-    for bin in binaries {
+    for bin in &binaries {
         if let Ok(out) = Command::new(bin).args(["mode", mode]).output() {
             if out.status.success() {
                 return Ok(());

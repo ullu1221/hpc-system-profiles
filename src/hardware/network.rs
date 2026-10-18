@@ -19,11 +19,24 @@ pub fn find_wireless_interface() -> Option<String> {
     None
 }
 
+fn get_wifi_binaries() -> Vec<String> {
+    let mut bins = vec![
+        "wifi-pm".to_string(),
+        "/usr/local/bin/wifi-pm".to_string(),
+    ];
+    if let Ok(home) = std::env::var("HOME") {
+        bins.push(format!("{}/.local/bin/wifi-pm", home));
+    }
+    if let Ok(user) = std::env::var("SUDO_USER") {
+        bins.push(format!("/home/{}/.local/bin/wifi-pm", user));
+    }
+    bins
+}
+
 pub fn get_wifi_power_save() -> Option<bool> {
     // 1. Try wifi-pm first (checking PATH and standard install locations)
-    let candidates = ["wifi-pm", "/usr/local/bin/wifi-pm", "/home/p/.local/bin/wifi-pm"];
-    for bin in candidates {
-        if let Ok(output) = Command::new(bin).arg("status").output() {
+    for bin in get_wifi_binaries() {
+        if let Ok(output) = Command::new(&bin).arg("status").output() {
             if output.status.success() {
                 let text = String::from_utf8_lossy(&output.stdout);
                 if text.contains("Live State:   ON") {
@@ -54,9 +67,8 @@ pub fn get_wifi_power_save() -> Option<bool> {
 pub fn set_wifi_power_save(enable: bool) -> Result<(), AppError> {
     // 1. Try wifi-pm first
     let cmd = if enable { "on" } else { "off" };
-    let candidates = ["wifi-pm", "/usr/local/bin/wifi-pm", "/home/p/.local/bin/wifi-pm"];
-    for bin in candidates {
-        if let Ok(status) = Command::new(bin).arg(cmd).output() {
+    for bin in get_wifi_binaries() {
+        if let Ok(status) = Command::new(&bin).arg(cmd).output() {
             if status.status.success() {
                 return Ok(());
             }
