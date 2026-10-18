@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+use std::fs;
 use std::path::Path;
 use crate::types::{AppError, Profile};
 use crate::profile::{get_active_profile, apply_profile, CONFIG_PATH};
@@ -194,6 +195,9 @@ pub fn verify_cmd() {
     print_check("Dell Thermal Mode", &thermal_mode, exp_thermal_str, exp_thermal_match);
 
     if active == Profile::VmGaming {
+        let iommu_enabled = Path::new("/sys/kernel/iommu_groups").exists()
+            && fs::read_dir("/sys/kernel/iommu_groups").map(|mut d| d.next().is_some()).unwrap_or(false);
+        print_check("IOMMU Hardware Active", &iommu_enabled.to_string(), "true", iommu_enabled);
         let lg_ready = Path::new("/dev/shm/looking-glass").metadata()
             .map(|m| m.len() >= 32 * 1024 * 1024)
             .unwrap_or(false);
