@@ -163,7 +163,7 @@ pub fn verify_cmd() {
     let t_lower = thermal_mode.to_lowercase();
     let (exp_thermal_str, exp_thermal_match) = match active {
         Profile::Battery => ("quiet (0xa3/0xa5)", t_lower.contains("quiet") || t_lower.contains("low-power") || t_lower.contains("0xa3") || t_lower.contains("0xa5")),
-        Profile::Daily => ("balanced (0xa0)", t_lower.contains("balanced") || t_lower.contains("0xa0")),
+        Profile::Daily => ("balanced (0xa0)", (t_lower.contains("balanced") && !t_lower.contains("balanced-performance")) || t_lower.contains("0xa0")),
         Profile::Ai | Profile::Gaming | Profile::VmGaming => {
             ("performance (0xa1/0xab)", t_lower.contains("performance") || t_lower.contains("0xa1") || t_lower.contains("0xab"))
         }
