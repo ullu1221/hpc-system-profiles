@@ -82,7 +82,14 @@ pub fn show_status() {
     println!("--------------------------------------------------------------------------------");
     println!("  [VM Gaming & VFIO Passthrough Readiness]");
     println!("    IOMMU Groups:       {}", if vm_readiness.iommu_enabled { "ENABLED (/sys/kernel/iommu_groups active)" } else { "DISABLED" });
-    println!("    RTX 3050 Isolated:  {}", if vm_readiness.gpu_isolated { "YES (Group 12 clean isolation)" } else { "NO / Shared" });
+    let gpu_vfio_desc = if vm_readiness.gpu_driver == "vfio-pci" {
+        "ISOLATED FOR VM (vfio-pci driver bound)".to_string()
+    } else if vm_readiness.iommu_group_clean {
+        format!("HOST ACTIVE (Group 12 clean; bound to {})", vm_readiness.gpu_driver)
+    } else {
+        format!("SHARED / UNISOLATED ({})", vm_readiness.gpu_driver)
+    };
+    println!("    GPU VFIO Status:    {}", gpu_vfio_desc);
     println!("    HugePages Config:   {}", if vm_readiness.hugepages_configured { "ACTIVE" } else { "NOT ALLOCATED" });
     println!("    Looking Glass SHM:  {} ({})", 
         if vm_readiness.looking_glass_ready { "READY" } else { "NOT CREATED" },
@@ -151,6 +158,17 @@ pub fn verify_cmd() {
         print_check("NVIDIA Persistence", &gpu.persistence_mode.to_string(), &exp_nv_pm.to_string(), gpu.persistence_mode == exp_nv_pm);
     }
     print_check("Wi-Fi Power Save", &wifi_ps.to_string(), &exp_wifi_ps.to_string(), wifi_ps == exp_wifi_ps);
+
+    let thermal_mode = thermal::get_thermal_mode().unwrap_or_else(|| "unknown".to_string());
+    let t_lower = thermal_mode.to_lowercase();
+    let (exp_thermal_str, exp_thermal_match) = match active {
+        Profile::Battery => ("quiet (0xa3/0xa5)", t_lower.contains("quiet") || t_lower.contains("low-power") || t_lower.contains("0xa3") || t_lower.contains("0xa5")),
+        Profile::Daily => ("balanced (0xa0)", t_lower.contains("balanced") || t_lower.contains("0xa0")),
+        Profile::Ai | Profile::Gaming | Profile::VmGaming => {
+            ("performance (0xa1/0xab)", t_lower.contains("performance") || t_lower.contains("0xa1") || t_lower.contains("0xab"))
+        }
+    };
+    print_check("Dell Thermal Mode", &thermal_mode, exp_thermal_str, exp_thermal_match);
 
     if active == Profile::VmGaming {
         let lg_ready = Path::new("/dev/shm/looking-glass").exists();

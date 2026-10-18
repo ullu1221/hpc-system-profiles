@@ -7,7 +7,8 @@ use super::cpu::CpuTopology;
 
 pub struct VmReadiness {
     pub iommu_enabled: bool,
-    pub gpu_isolated: bool,
+    pub iommu_group_clean: bool,
+    pub gpu_driver: String,
     pub hugepages_configured: bool,
     pub looking_glass_ready: bool,
     pub looking_glass_path: String,
@@ -17,7 +18,12 @@ pub fn check_vm_readiness() -> VmReadiness {
     let iommu_enabled = Path::new("/sys/kernel/iommu_groups").exists()
         && fs::read_dir("/sys/kernel/iommu_groups").map(|mut d| d.next().is_some()).unwrap_or(false);
 
-    let gpu_isolated = Path::new("/sys/kernel/iommu_groups/12/devices/0000:01:00.0").exists();
+    let iommu_group_clean = Path::new("/sys/kernel/iommu_groups/12/devices/0000:01:00.0").exists();
+
+    let gpu_driver = fs::read_link("/sys/bus/pci/devices/0000:01:00.0/driver")
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unbound".to_string());
 
     let hugepages_1g: u32 = fs::read_to_string("/sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages")
         .ok()
@@ -34,7 +40,8 @@ pub fn check_vm_readiness() -> VmReadiness {
 
     VmReadiness {
         iommu_enabled,
-        gpu_isolated,
+        iommu_group_clean,
+        gpu_driver,
         hugepages_configured,
         looking_glass_ready,
         looking_glass_path: lg_path.to_string(),
