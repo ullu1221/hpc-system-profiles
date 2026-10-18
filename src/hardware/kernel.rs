@@ -69,7 +69,9 @@ pub fn clamp_pcie_aspm(disable_aspm: bool) -> Result<usize, AppError> {
                         let status = u16::from_le_bytes([data[6], data[7]]);
                         if (status & 0x0010) != 0 {
                             let mut cap_ptr = data[0x34] as usize;
-                            while cap_ptr != 0 && cap_ptr <= bytes_read - 4 {
+                            let mut depth = 0;
+                            while cap_ptr != 0 && cap_ptr <= bytes_read - 4 && depth < 48 {
+                                depth += 1;
                                 let cap_id = data[cap_ptr];
                                 let next_ptr = data[cap_ptr + 1] as usize;
                                 if cap_id == 0x10 {
@@ -78,6 +80,14 @@ pub fn clamp_pcie_aspm(disable_aspm: bool) -> Result<usize, AppError> {
                                         let lnk_ctl = u16::from_le_bytes([data[lnk_ctl_offset], data[lnk_ctl_offset + 1]]);
                                         if disable_aspm && (lnk_ctl & 0x0003) != 0 {
                                             let new_lnk_ctl = lnk_ctl & !0x0003;
+                                            let new_bytes = new_lnk_ctl.to_le_bytes();
+                                            use std::io::Seek;
+                                            if file.seek(std::io::SeekFrom::Start(lnk_ctl_offset as u64)).is_ok() {
+                                                let _ = file.write_all(&new_bytes);
+                                                clamped += 1;
+                                            }
+                                        } else if !disable_aspm && (lnk_ctl & 0x0002) == 0 {
+                                            let new_lnk_ctl = (lnk_ctl & !0x0003) | 0x0002;
                                             let new_bytes = new_lnk_ctl.to_le_bytes();
                                             use std::io::Seek;
                                             if file.seek(std::io::SeekFrom::Start(lnk_ctl_offset as u64)).is_ok() {
@@ -128,7 +138,9 @@ pub fn get_pcie_aspm_policy() -> String {
                         let status = u16::from_le_bytes([data[6], data[7]]);
                         if (status & 0x0010) != 0 {
                             let mut cap_ptr = data[0x34] as usize;
-                            while cap_ptr != 0 && cap_ptr <= n - 4 {
+                            let mut depth = 0;
+                            while cap_ptr != 0 && cap_ptr <= n - 4 && depth < 48 {
+                                depth += 1;
                                 if data[cap_ptr] == 0x10 {
                                     total_pcie += 1;
                                     let lnk_ctl_offset = cap_ptr + 16;

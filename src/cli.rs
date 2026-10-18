@@ -82,10 +82,12 @@ pub fn show_status() {
     println!("--------------------------------------------------------------------------------");
     println!("  [VM Gaming & VFIO Passthrough Readiness]");
     println!("    IOMMU Groups:       {}", if vm_readiness.iommu_enabled { "ENABLED (/sys/kernel/iommu_groups active)" } else { "DISABLED" });
-    let gpu_vfio_desc = if vm_readiness.gpu_driver == "vfio-pci" {
-        "ISOLATED FOR VM (vfio-pci driver bound)".to_string()
+    let gpu_vfio_desc = if vm_readiness.gpu_driver == "vfio-pci" && vm_readiness.audio_driver == "vfio-pci" {
+        format!("ISOLATED FOR VM (Group {} clean; vfio-pci bound to GPU & Audio)", vm_readiness.group_id)
+    } else if vm_readiness.gpu_driver == "vfio-pci" {
+        format!("PARTIALLY ISOLATED (Group {} GPU on vfio-pci, but Audio on {})", vm_readiness.group_id, vm_readiness.audio_driver)
     } else if vm_readiness.iommu_group_clean {
-        format!("HOST ACTIVE (Group 12 clean; bound to {})", vm_readiness.gpu_driver)
+        format!("HOST ACTIVE (Group {} clean; GPU: {}, Audio: {})", vm_readiness.group_id, vm_readiness.gpu_driver, vm_readiness.audio_driver)
     } else {
         format!("SHARED / UNISOLATED ({})", vm_readiness.gpu_driver)
     };

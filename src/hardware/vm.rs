@@ -8,7 +8,9 @@ use super::cpu::CpuTopology;
 pub struct VmReadiness {
     pub iommu_enabled: bool,
     pub iommu_group_clean: bool,
+    pub group_id: String,
     pub gpu_driver: String,
+    pub audio_driver: String,
     pub hugepages_configured: bool,
     pub looking_glass_ready: bool,
     pub looking_glass_path: String,
@@ -18,9 +20,38 @@ pub fn check_vm_readiness() -> VmReadiness {
     let iommu_enabled = Path::new("/sys/kernel/iommu_groups").exists()
         && fs::read_dir("/sys/kernel/iommu_groups").map(|mut d| d.next().is_some()).unwrap_or(false);
 
-    let iommu_group_clean = Path::new("/sys/kernel/iommu_groups/12/devices/0000:01:00.0").exists();
+    let gpu_iommu_link = fs::read_link("/sys/bus/pci/devices/0000:01:00.0/iommu_group").ok();
+    let group_id = gpu_iommu_link.as_ref()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "none".to_string());
+
+    let mut group_clean = false;
+    if let Some(ref group_link) = gpu_iommu_link {
+        let abs_group_path = Path::new("/sys/bus/pci/devices/0000:01:00.0")
+            .join(group_link)
+            .join("devices");
+        if let Ok(entries) = fs::read_dir(&abs_group_path) {
+            let mut all_gpu = true;
+            let mut count = 0;
+            for entry in entries.flatten() {
+                count += 1;
+                let name = entry.file_name().to_string_lossy().to_string();
+                if !name.starts_with("0000:01:00.") {
+                    all_gpu = false;
+                }
+            }
+            if count > 0 && all_gpu {
+                group_clean = true;
+            }
+        }
+    }
 
     let gpu_driver = fs::read_link("/sys/bus/pci/devices/0000:01:00.0/driver")
+        .ok()
+        .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+        .unwrap_or_else(|| "unbound".to_string());
+
+    let audio_driver = fs::read_link("/sys/bus/pci/devices/0000:01:00.1/driver")
         .ok()
         .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
         .unwrap_or_else(|| "unbound".to_string());
@@ -42,8 +73,10 @@ pub fn check_vm_readiness() -> VmReadiness {
 
     VmReadiness {
         iommu_enabled,
-        iommu_group_clean,
+        iommu_group_clean: group_clean,
+        group_id,
         gpu_driver,
+        audio_driver,
         hugepages_configured,
         looking_glass_ready,
         looking_glass_path: lg_path.to_string(),
