@@ -29,8 +29,8 @@ pub fn get_active_profile() -> Profile {
     if let Ok(content) = fs::read_to_string(CONFIG_PATH) {
         for line in content.lines() {
             let line = line.trim();
-            if line.starts_with("ACTIVE_PROFILE=") {
-                let val = line["ACTIVE_PROFILE=".len()..].trim().trim_matches('"');
+            if let Some(val) = line.strip_prefix("ACTIVE_PROFILE=") {
+                let val = val.trim().trim_matches('"');
                 if let Some(p) = Profile::parse(val) {
                     return p;
                 }
@@ -149,7 +149,8 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     let _ = network::set_wifi_power_save(wifi_ps);
 
     // 8. PCIe ASPM Hardware Clamping (eliminates L0s/L1 bus sleep stalls)
-    let _ = kernel::clamp_pcie_aspm(clamp_cstates);
+    let clamp_pcie_aspm = matches!(profile, Profile::Ai | Profile::Gaming | Profile::VmGaming);
+    let _ = kernel::clamp_pcie_aspm(clamp_pcie_aspm);
 
     // 9. VM Gaming Specific Setup (Looking Glass SHMEM & HugePages)
     let mut lg_ready = Path::new("/dev/shm/looking-glass").metadata()
@@ -182,7 +183,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         vfs_cache_pressure: vfs_cp,
         nvidia_persistence: nv_pm,
         wifi_power_save: wifi_ps,
-        pcie_aspm_clamped: clamp_cstates,
+        pcie_aspm_clamped: clamp_pcie_aspm,
         thermal_mode: therm_mode.to_string(),
         looking_glass_ready: lg_ready,
     })

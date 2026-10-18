@@ -52,3 +52,22 @@ fn test_vm_xml_generation_intel_compatibility() {
     // Ensure AMD-specific topoext is NOT present
     assert!(!xml.contains("topoext"));
 }
+
+#[test]
+fn test_vm_xml_generation_8_cores_bounds_safety() {
+    use hpc_perf::hardware::cpu::CpuTopology;
+    use hpc_perf::hardware::vm::generate_cputune_xml;
+
+    // Test with exactly 8 P-core threads (would panic prior to >= 12 bounds fix)
+    let topo_8 = CpuTopology {
+        total_threads: 12,
+        p_core_threads: vec![0, 1, 2, 3, 4, 5, 6, 7],
+        e_core_threads: vec![8, 9, 10, 11],
+        cores: vec![],
+    };
+
+    let xml = generate_cputune_xml(&topo_8);
+    assert!(xml.contains("<vcpu placement='static'>8</vcpu>"));
+    assert!(xml.contains("<vcpupin vcpu='0' cpuset='0'/>"));
+    assert!(xml.contains("<vcpupin vcpu='7' cpuset='7'/>"));
+}

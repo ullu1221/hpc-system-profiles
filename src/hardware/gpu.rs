@@ -89,6 +89,7 @@ pub fn set_nvidia_persistence(enable: bool) -> Result<(), AppError> {
         if err_msg.contains("Permission denied") || err_msg.contains("Root privilege is required") {
             return Err(AppError::PermissionDenied("nvidia-smi -pm requires root privileges".to_string()));
         }
+        return Err(AppError::CommandFailed(format!("nvidia-smi -pm failed: {}", err_msg.trim())));
     }
     Ok(())
 }

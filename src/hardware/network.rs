@@ -20,14 +20,17 @@ pub fn find_wireless_interface() -> Option<String> {
 }
 
 pub fn get_wifi_power_save() -> Option<bool> {
-    // 1. Try wifi-pm first
-    if let Ok(output) = Command::new("wifi-pm").arg("status").output() {
-        if output.status.success() {
-            let text = String::from_utf8_lossy(&output.stdout);
-            if text.contains("Live State:   ON") {
-                return Some(true);
-            } else if text.contains("Live State:   OFF") {
-                return Some(false);
+    // 1. Try wifi-pm first (checking PATH and standard install locations)
+    let candidates = ["wifi-pm", "/usr/local/bin/wifi-pm", "/home/p/.local/bin/wifi-pm"];
+    for bin in candidates {
+        if let Ok(output) = Command::new(bin).arg("status").output() {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                if text.contains("Live State:   ON") {
+                    return Some(true);
+                } else if text.contains("Live State:   OFF") {
+                    return Some(false);
+                }
             }
         }
     }
@@ -51,9 +54,12 @@ pub fn get_wifi_power_save() -> Option<bool> {
 pub fn set_wifi_power_save(enable: bool) -> Result<(), AppError> {
     // 1. Try wifi-pm first
     let cmd = if enable { "on" } else { "off" };
-    if let Ok(status) = Command::new("wifi-pm").arg(cmd).output() {
-        if status.status.success() {
-            return Ok(());
+    let candidates = ["wifi-pm", "/usr/local/bin/wifi-pm", "/home/p/.local/bin/wifi-pm"];
+    for bin in candidates {
+        if let Ok(status) = Command::new(bin).arg(cmd).output() {
+            if status.status.success() {
+                return Ok(());
+            }
         }
     }
 
@@ -71,6 +77,7 @@ pub fn set_wifi_power_save(enable: bool) -> Result<(), AppError> {
         if err.contains("Operation not permitted") {
             return Err(AppError::PermissionDenied("Setting Wi-Fi power save requires root".to_string()));
         }
+        return Err(AppError::CommandFailed(format!("iw dev {} set power_save {} failed: {}", iface, iw_arg, err.trim())));
     }
 
     Ok(())

@@ -128,7 +128,7 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     // Persist via systemd-tmpfiles
     let tmpfile_conf = "/etc/tmpfiles.d/10-looking-glass.conf";
     let content = format!("f /dev/shm/looking-glass 0660 {} {} -\n", actual_user, group);
-    if let Ok(_) = fs::write(tmpfile_conf, content) {
+    if fs::write(tmpfile_conf, content).is_ok() {
         let _ = std::process::Command::new("systemd-tmpfiles").args(["--create"]).output();
     }
 
@@ -138,7 +138,7 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
 pub fn generate_cputune_xml(topology: &CpuTopology) -> String {
     // We isolate 8 threads on dedicated P-cores for the VM (CPUs 4-11: 4 physical P-cores with SMT)
     // We pin emulator and iothreads to E-cores (CPUs 12-15) and Core 0 (CPUs 0-1)
-    let p_pinned = if topology.p_core_threads.len() >= 8 {
+    let p_pinned = if topology.p_core_threads.len() >= 12 {
         &topology.p_core_threads[4..12]
     } else {
         &topology.p_core_threads[..]

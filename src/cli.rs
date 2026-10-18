@@ -32,9 +32,9 @@ pub fn show_status() {
     println!("    Scaling Governor:   {}", current_gov);
     println!("    EPP (Energy Pref):  {}", current_epp);
     print!("    C-States Status:    ");
-    let deep_cstates_disabled = cstates.iter().any(|(name, _, dis)| (name.contains("C2") || name.contains("C3")) && *dis);
+    let deep_cstates_disabled = cstates.iter().any(|(_, lat, dis)| *lat > 10 && *dis);
     if deep_cstates_disabled {
-        println!("CLAMPED (C2 & C3 disabled; 0-1 us latency, zero wakeup jitter)");
+        println!("CLAMPED (Deep sleep states disabled; 0-1 us latency, zero wakeup jitter)");
     } else {
         println!("UNCLAMPED (All C-states active; max energy conservation)");
     }
@@ -145,18 +145,21 @@ pub fn verify_cmd() {
     let gov = cpu::get_governor();
     let epp = cpu::get_epp();
     let cstates = cpu::get_cstates_status();
-    let deep_cstates_disabled = cstates.iter().any(|(name, _, dis)| (name.contains("C2") || name.contains("C3")) && *dis);
+    let deep_cstates_disabled = cstates.iter().any(|(_, lat, dis)| *lat > 10 && *dis);
     let split_lock = kernel::get_split_lock_mitigate().unwrap_or(99);
     let swap = kernel::get_vm_sysctl("swappiness").unwrap_or(999);
+    let dirty_r = kernel::get_vm_sysctl("dirty_ratio").unwrap_or(999);
+    let dirty_bg = kernel::get_vm_sysctl("dirty_background_ratio").unwrap_or(999);
+    let vfs_cp = kernel::get_vm_sysctl("vfs_cache_pressure").unwrap_or(999);
     let gpu_status = gpu::get_gpu_status();
     let wifi_ps = network::get_wifi_power_save().unwrap_or(false);
 
-    let (exp_gov, exp_epp, exp_cstates_clamped, exp_split_lock, exp_swap, exp_nv_pm, exp_wifi_ps) = match active {
-        Profile::Battery => ("powersave", "power", false, 1, 60, false, true),
-        Profile::Daily => ("powersave", "balance_performance", false, 0, 30, true, true),
-        Profile::Ai => ("performance", "performance", true, 0, 10, true, false),
-        Profile::Gaming => ("performance", "performance", true, 0, 10, true, false),
-        Profile::VmGaming => ("performance", "performance", true, 0, 10, true, false),
+    let (exp_gov, exp_epp, exp_cstates_clamped, exp_split_lock, exp_swap, exp_dirty_r, exp_dirty_bg, exp_vfs_cp, exp_nv_pm, exp_wifi_ps) = match active {
+        Profile::Battery => ("powersave", "power", false, 1, 60, 20, 10, 100, false, true),
+        Profile::Daily => ("powersave", "balance_performance", false, 0, 30, 15, 5, 50, true, true),
+        Profile::Ai => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
+        Profile::Gaming => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
+        Profile::VmGaming => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
     };
 
     print_check("CPU Governor", &gov, exp_gov, gov == exp_gov);
@@ -164,6 +167,9 @@ pub fn verify_cmd() {
     print_check("C-States Clamped", &deep_cstates_disabled.to_string(), &exp_cstates_clamped.to_string(), deep_cstates_disabled == exp_cstates_clamped);
     print_check("Split-Lock Mitigate", &split_lock.to_string(), &exp_split_lock.to_string(), split_lock == exp_split_lock);
     print_check("RAM Swappiness", &swap.to_string(), &exp_swap.to_string(), swap == exp_swap);
+    print_check("Dirty Ratio", &dirty_r.to_string(), &exp_dirty_r.to_string(), dirty_r == exp_dirty_r);
+    print_check("Dirty BG Ratio", &dirty_bg.to_string(), &exp_dirty_bg.to_string(), dirty_bg == exp_dirty_bg);
+    print_check("VFS Cache Pressure", &vfs_cp.to_string(), &exp_vfs_cp.to_string(), vfs_cp == exp_vfs_cp);
     if let Some(gpu) = gpu_status {
         print_check("NVIDIA Persistence", &gpu.persistence_mode.to_string(), &exp_nv_pm.to_string(), gpu.persistence_mode == exp_nv_pm);
     }
@@ -171,14 +177,11 @@ pub fn verify_cmd() {
 
     let pcie_aspm = kernel::get_pcie_aspm_policy();
     let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming);
-    let aspm_pass = if exp_aspm_clamped {
-        pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE")
-    } else {
-        true
-    };
+    let is_aspm_clamped = pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE");
+    let aspm_pass = is_aspm_clamped == exp_aspm_clamped;
     print_check(
         "PCIe ASPM Clamped",
-        if pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE") { "true" } else { "false" },
+        if is_aspm_clamped { "true" } else { "false" },
         &exp_aspm_clamped.to_string(),
         aspm_pass,
     );

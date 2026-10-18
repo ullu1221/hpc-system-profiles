@@ -24,8 +24,8 @@ fn print_usage() {
     println!("Profiles:");
     println!("  battery             Powersave governor, power EPP, deep C-states, quiet fans, Wi-Fi PM on");
     println!("  daily               Powersave governor, balance_perf EPP, balanced fans, split-lock off");
-    println!("  ai                  Performance governor, clamped C-states, low swappiness, 85W GPU boost");
-    println!("  gaming              Performance governor, clamped C-states, 0ms split-lock, Wi-Fi PM off, 85W GPU");
+    println!("  ai                  Performance governor, clamped C-states, low swappiness, 95W GPU boost");
+    println!("  gaming              Performance governor, clamped C-states, 0ms split-lock, Wi-Fi PM off, 95W GPU");
     println!("  vm-gaming           All gaming tuning + Looking Glass SHMEM setup + dedicated P-core pinning");
 }
 
@@ -39,7 +39,8 @@ fn is_root_user() -> bool {
 }
 
 fn elevate_if_needed(cmd: &str) {
-    let needs_root = matches!(cmd, "set" | "battery" | "daily" | "ai" | "gaming" | "vm-gaming" | "apply");
+    let needs_root = matches!(cmd, "set" | "battery" | "daily" | "ai" | "gaming" | "vm-gaming" | "apply")
+        || Profile::parse(cmd).is_some();
     if needs_root && !is_root_user() {
         let args: Vec<String> = env::args().collect();
         let mut sudo_cmd = process::Command::new("sudo");
@@ -98,7 +99,7 @@ fn main() {
             cli::show_vm_pinning();
         }
         other => {
-            if let Some(_) = Profile::parse(other) {
+            if Profile::parse(other).is_some() {
                 elevate_if_needed(other);
                 if let Err(e) = cli::set_profile_cmd(other) {
                     eprintln!("Error: {}", e);

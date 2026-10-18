@@ -40,7 +40,7 @@ On the Dell G15 5530 (Intel Core i5-13450HX, NVIDIA RTX 3050 6GB Laptop GPU, DDR
 | **Split-Lock Penalty**| Enabled (1) | **Disabled (0)** | **Disabled (0)** | **Disabled (0)** | **Disabled (0)** |
 | **RAM Swappiness** | 60 | 30 | **10** | **10** | **10** |
 | **Dirty Page Limits** | 20% / 10% | 15% / 5% | **10% / 5%** | **10% / 5%** | **10% / 5%** |
-| **NVIDIA Persistence**| Off | **On** | **On (85W Boost)** | **On (85W Boost)** | **On (85W Boost)** |
+| **NVIDIA Persistence**| Off | **On** | **On (95W Boost)** | **On (95W Boost)** | **On (95W Boost)** |
 | **Wi-Fi Power Save** | ON | ON | **OFF (1-2ms ping)** | **OFF (1-2ms ping)** | **OFF (1-2ms ping)** |
 | **Dell Thermal Mode** | `quiet` | `balanced` | `performance` | `performance` | `performance` |
 | **Looking Glass SHM** | Ignored | Ignored | Ignored | Ignored | **Configured (`0660 p:kvm`)** |

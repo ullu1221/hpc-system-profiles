@@ -33,10 +33,9 @@ pub fn set_governor(governor: &str) -> Result<(), AppError> {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
+        if name_str.len() > 3 && name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
             let gov_path = entry.path().join("cpufreq/scaling_governor");
-            if gov_path.exists() {
-                fs::write(&gov_path, governor)?;
+            if gov_path.exists() && fs::write(&gov_path, governor).is_ok() {
                 updated += 1;
             }
         }
@@ -59,10 +58,9 @@ pub fn set_epp(epp: &str) -> Result<(), AppError> {
         let entry = entry?;
         let name = entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
+        if name_str.len() > 3 && name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
             let epp_path = entry.path().join("cpufreq/energy_performance_preference");
-            if epp_path.exists() {
-                fs::write(&epp_path, epp)?;
+            if epp_path.exists() && fs::write(&epp_path, epp).is_ok() {
                 updated += 1;
             }
         }
@@ -110,7 +108,7 @@ pub fn set_cstates_clamp(disable_deep_cstates: bool) -> Result<(), AppError> {
         let cpu_entry = cpu_entry?;
         let name = cpu_entry.file_name();
         let name_str = name.to_string_lossy();
-        if name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
+        if name_str.len() > 3 && name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
             let cpuidle_dir = cpu_entry.path().join("cpuidle");
             if cpuidle_dir.exists() {
                 if let Ok(state_entries) = fs::read_dir(&cpuidle_dir) {
