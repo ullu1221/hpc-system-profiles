@@ -9,6 +9,7 @@ pub enum Profile {
     Ai,
     Gaming,
     VmGaming,
+    Raw,
 }
 
 impl Profile {
@@ -19,6 +20,7 @@ impl Profile {
             "ai" | "compute" | "cuda" => Some(Profile::Ai),
             "gaming" | "game" => Some(Profile::Gaming),
             "vm-gaming" | "vmgaming" | "vfio" | "autovirt" => Some(Profile::VmGaming),
+            "raw" | "extreme" | "max" | "baremetal" | "bare-metal" | "squeeze" => Some(Profile::Raw),
             _ => None,
         }
     }
@@ -30,16 +32,18 @@ impl Profile {
             Profile::Ai => "ai",
             Profile::Gaming => "gaming",
             Profile::VmGaming => "vm-gaming",
+            Profile::Raw => "raw",
         }
     }
 
     pub fn display_name(&self) -> &'static str {
         match self {
-            Profile::Battery => "Daily Battery (Acoustic Silence & Power Preservation)",
-            Profile::Daily => "Daily AC / Balanced (Smooth Desktop Performance)",
-            Profile::Ai => "AI & Compute (Max CUDA/Compute & Memory Streaming)",
-            Profile::Gaming => "General Gaming (Real-Time Zero-Lag & Clamped C-States)",
-            Profile::VmGaming => "VM Gaming (VFIO Passthrough, P-Core Pinning & IVSHMEM)",
+            Profile::Battery => "Daily Battery (Acoustic Silence & Power Preservation) [Level 1]",
+            Profile::Daily => "Daily AC / Balanced (Smooth Desktop Performance) [Level 1]",
+            Profile::Ai => "AI & Compute (Max CUDA/Compute & Memory Streaming) [Level 2]",
+            Profile::Gaming => "General Gaming (Real-Time Zero-Lag & Clamped C-States) [Level 2]",
+            Profile::VmGaming => "VM Gaming (VFIO Passthrough, P-Core Pinning & IVSHMEM) [Level 2]",
+            Profile::Raw => "Raw Bare-Metal & Extreme Compute (Zero Bloat, G-Mode 100% Fans, Clamped Max Clocks) [Level 3]",
         }
     }
 }

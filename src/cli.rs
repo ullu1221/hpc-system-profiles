@@ -22,10 +22,17 @@ pub fn show_status() {
     let thermal_mode = thermal::get_thermal_mode().unwrap_or_else(|| "unknown".to_string());
     let vm_readiness = vm::check_vm_readiness();
 
+    let tier_level = match active_profile {
+        Profile::Battery | Profile::Daily => "Level 1 (Daily Life)",
+        Profile::Ai | Profile::Gaming | Profile::VmGaming => "Level 2 (Mixture of Both / Interactive High-Performance)",
+        Profile::Raw => "Level 3 (Squeeze Every Bit / Raw Bare-Metal Compute)",
+    };
+
     println!("================================================================================");
     println!("          HPC Deterministic Performance & System Profile Controller             ");
     println!("================================================================================");
     println!("  Active Profile:       {} [{}]", active_profile.as_str().to_uppercase(), active_profile.display_name());
+    println!("  System Tier:          {}", tier_level);
     println!("  Config File:          {}", CONFIG_PATH);
     println!("--------------------------------------------------------------------------------");
     println!("  [CPU Subsystem]");
@@ -159,16 +166,15 @@ pub fn verify_cmd() {
     let (exp_gov, exp_epp, exp_epb, exp_cstates_clamped, exp_split_lock, exp_swap, exp_dirty_r, exp_dirty_bg, exp_vfs_cp, exp_nv_pm, exp_wifi_ps) = match active {
         Profile::Battery => ("powersave", "power", "15 (power)", false, 1, 60, 20, 10, 100, false, true),
         Profile::Daily => ("powersave", "balance_performance", "6 (normal)", false, 0, 30, 15, 5, 50, true, true),
-        Profile::Ai => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
-        Profile::Gaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
-        Profile::VmGaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
+        Profile::Ai | Profile::Gaming | Profile::VmGaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
+        Profile::Raw => ("performance", "performance", "0 (performance)", true, 0, 1, 5, 2, 10, true, false),
     };
 
     let epb = cpu::get_epb();
     let epb_pass = match active {
         Profile::Battery => epb.starts_with("15") || epb.starts_with("power"),
         Profile::Daily => epb.starts_with('6') || epb.starts_with("normal") || epb.starts_with('4'),
-        Profile::Ai | Profile::Gaming | Profile::VmGaming => epb.starts_with('0') || epb.starts_with("performance"),
+        Profile::Ai | Profile::Gaming | Profile::VmGaming | Profile::Raw => epb.starts_with('0') || epb.starts_with("performance"),
     };
 
     print_check("CPU Governor", &gov, exp_gov, gov == exp_gov);
@@ -186,7 +192,7 @@ pub fn verify_cmd() {
     print_check("Wi-Fi Power Save", &wifi_ps.to_string(), &exp_wifi_ps.to_string(), wifi_ps == exp_wifi_ps);
 
     let pcie_aspm = kernel::get_pcie_aspm_policy();
-    let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming);
+    let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming | Profile::Raw);
     let is_aspm_clamped = pcie_aspm.starts_with("CLAMPED");
     let aspm_pass = is_aspm_clamped == exp_aspm_clamped;
     print_check(
@@ -203,6 +209,9 @@ pub fn verify_cmd() {
         Profile::Daily => ("balanced (0xa0)", (t_lower.contains("balanced") && !t_lower.contains("balanced-performance")) || t_lower.contains("0xa0")),
         Profile::Ai | Profile::Gaming | Profile::VmGaming => {
             ("performance (0xa1/0xab)", t_lower.contains("performance") || t_lower.contains("0xa1") || t_lower.contains("0xab"))
+        }
+        Profile::Raw => {
+            ("g-mode 100% fans (0xab)", t_lower.contains("g-mode") || t_lower.contains("gmode") || t_lower.contains("0xab") || t_lower.contains("100%"))
         }
     };
     print_check("Dell Thermal Mode", &thermal_mode, exp_thermal_str, exp_thermal_match);
@@ -242,4 +251,29 @@ pub fn show_vm_pinning() {
     println!("    - Host emulatorpin & iothreadpin are pinned to E-Cores (CPUs 12-15) to prevent");
     println!("      host background work and interrupts from interrupting your gaming threads.");
     println!("================================================================================");
+}
+
+pub fn run_pinned(cmd_args: &[String]) {
+    if cmd_args.is_empty() {
+        eprintln!("Usage: hpc-perf run -- <command> [args...]");
+        std::process::exit(1);
+    }
+    let command = &cmd_args[0];
+    let args = &cmd_args[1..];
+
+    // Dell G15 5530: CPUs 0-11 are the 12 P-Core threads (4.6GHz max).
+    // CPUs 12-15 are E-Cores (3.4GHz) for OS housekeeping.
+    println!("[+] Launching workload pinned to P-Cores (CPUs 0-11, 4.6GHz Max IPC)...");
+
+    let mut child = std::process::Command::new("taskset");
+    child.args(["-c", "0-11", command]);
+    child.args(args);
+
+    match child.status() {
+        Ok(status) => std::process::exit(status.code().unwrap_or(0)),
+        Err(e) => {
+            eprintln!("Failed to execute command via taskset: {}", e);
+            std::process::exit(1);
+        }
+    }
 }

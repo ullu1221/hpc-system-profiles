@@ -127,6 +127,20 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
             false,
             "performance",
         ),
+        Profile::Raw => (
+            "performance",
+            "performance",
+            "0",
+            true, // Clamped C-states (zero wakeup latency)
+            0,    // Split-lock mitigate off (no 10ms penalties)
+            1,    // Swappiness 1: Absolute strict RAM residency
+            5,    // Dirty ratio 5%: rapid continuous background disk flush
+            2,    // Dirty bg ratio 2%
+            10,   // VFS cache pressure 10: strictly retain inode/dentry caches in memory
+            true, // NVIDIA persistence on
+            false, // Wi-Fi PM off (flat 1ms ping)
+            "gmode", // Dell Alienware G-Mode 100% fans: maximum sustained TDP
+        ),
     };
 
     // 1. Dell G15 Thermal Mode & PPD synchronization (set first so explicit governor/EPP overrides take precedence)
@@ -149,14 +163,22 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     let _ = kernel::set_vm_sysctl("dirty_background_ratio", dirty_bg);
     let _ = kernel::set_vm_sysctl("vfs_cache_pressure", vfs_cp);
 
-    // 6. NVIDIA GPU Persistence Mode
+    // 6. NVIDIA GPU Persistence Mode & Clocks
     let _ = gpu::set_nvidia_persistence(nv_pm);
+    if profile == Profile::Raw {
+        let _ = gpu::lock_gpu_clocks(1500, 2100);
+    } else {
+        let _ = gpu::reset_gpu_clocks();
+    }
 
-    // 7. Wi-Fi Power Management
+    // 7. Background Noise & Daemon Suppression
+    crate::hardware::services::set_background_noise_suppression(profile == Profile::Raw);
+
+    // 8. Wi-Fi Power Management
     let _ = network::set_wifi_power_save(wifi_ps);
 
-    // 8. PCIe ASPM Hardware Clamping (eliminates L0s/L1 bus sleep stalls)
-    let clamp_pcie_aspm = matches!(profile, Profile::Ai | Profile::Gaming | Profile::VmGaming);
+    // 9. PCIe ASPM Hardware Clamping (eliminates L0s/L1 bus sleep stalls)
+    let clamp_pcie_aspm = matches!(profile, Profile::Ai | Profile::Gaming | Profile::VmGaming | Profile::Raw);
     let _ = kernel::clamp_pcie_aspm(clamp_pcie_aspm);
 
     // 9. VM Gaming Specific Setup (Looking Glass SHMEM & HugePages)

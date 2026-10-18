@@ -14,6 +14,10 @@ fn test_profile_parsing() {
     assert_eq!(Profile::parse("vm-gaming"), Some(Profile::VmGaming));
     assert_eq!(Profile::parse("vfio"), Some(Profile::VmGaming));
     assert_eq!(Profile::parse("autovirt"), Some(Profile::VmGaming));
+    assert_eq!(Profile::parse("raw"), Some(Profile::Raw));
+    assert_eq!(Profile::parse("extreme"), Some(Profile::Raw));
+    assert_eq!(Profile::parse("max"), Some(Profile::Raw));
+    assert_eq!(Profile::parse("baremetal"), Some(Profile::Raw));
     assert_eq!(Profile::parse("invalid"), None);
 }
 
@@ -24,9 +28,11 @@ fn test_profile_display_and_str() {
     assert_eq!(Profile::Ai.as_str(), "ai");
     assert_eq!(Profile::Gaming.as_str(), "gaming");
     assert_eq!(Profile::VmGaming.as_str(), "vm-gaming");
+    assert_eq!(Profile::Raw.as_str(), "raw");
 
     assert!(Profile::Battery.display_name().contains("Battery"));
     assert!(Profile::Gaming.display_name().contains("Gaming"));
+    assert!(Profile::Raw.display_name().contains("Raw"));
 }
 
 #[test]

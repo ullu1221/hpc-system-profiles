@@ -6,3 +6,4 @@ pub mod gpu;
 pub mod network;
 pub mod thermal;
 pub mod vm;
+pub mod services;

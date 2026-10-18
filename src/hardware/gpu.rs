@@ -93,3 +93,24 @@ pub fn set_nvidia_persistence(enable: bool) -> Result<(), AppError> {
     }
     Ok(())
 }
+
+pub fn lock_gpu_clocks(min_mhz: u32, max_mhz: u32) -> Result<(), AppError> {
+    if !is_nvidia_available() {
+        return Ok(());
+    }
+    let range = format!("{},{}", min_mhz, max_mhz);
+    let _ = Command::new("nvidia-smi")
+        .args(["-lgc", &range])
+        .output();
+    Ok(())
+}
+
+pub fn reset_gpu_clocks() -> Result<(), AppError> {
+    if !is_nvidia_available() {
+        return Ok(());
+    }
+    let _ = Command::new("nvidia-smi")
+        .arg("-rgc")
+        .output();
+    Ok(())
+}
