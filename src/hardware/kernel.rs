@@ -32,8 +32,27 @@ pub fn set_vm_sysctl(name: &str, val: u64) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn get_thp_status() -> String {
+    if let Ok(content) = fs::read_to_string("/sys/kernel/mm/transparent_hugepage/enabled") {
+        for part in content.split_whitespace() {
+            if part.starts_with('[') && part.ends_with(']') {
+                return part.trim_matches(|c| c == '[' || c == ']').to_string();
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
 pub fn get_pcie_aspm_policy() -> String {
-    fs::read_to_string("/sys/module/pcie_aspm/parameters/policy")
+    let raw = fs::read_to_string("/sys/module/pcie_aspm/parameters/policy")
         .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "unknown".to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    // On Dell G15 systems, the ACPI FADT firmware declares ASPM unsupported,
+    // permanently locking PCIe link power transitions in hardware.
+    if raw.starts_with("[default]") {
+        "DISABLED IN HARDWARE (Dell ACPI FADT - Link Sleep Permanently Off)".to_string()
+    } else {
+        raw
+    }
 }

@@ -43,22 +43,27 @@ pub fn check_vm_readiness() -> VmReadiness {
 
 pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     let lg_path = "/dev/shm/looking-glass";
-    if !Path::new(lg_path).exists() {
-        // Create 32MB zeroed file or empty file with correct permissions
-        fs::OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(false)
-            .open(lg_path)?;
-    }
+    
+    // Create and pre-allocate 32MB IVSHMEM buffer
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(lg_path)?;
 
-    // Set permissions via chmod/chown
+    // Sizing to 32MB ensures Looking Glass client and host can map shared memory without resize errors
+    let _ = file.set_len(32 * 1024 * 1024);
+
+    // Set permissions 0660
     let _ = std::process::Command::new("chmod").args(["0660", lg_path]).output();
-    let _ = std::process::Command::new("chown").args([&format!("{}:kvm", username), lg_path]).output();
+
+    // Dynamically check if group 'kvm' exists; fallback to username primary group
+    let group = if Path::new("/dev/kvm").exists() { "kvm" } else { username };
+    let _ = std::process::Command::new("chown").args([&format!("{}:{}", username, group), lg_path]).output();
 
     // Persist via systemd-tmpfiles
     let tmpfile_conf = "/etc/tmpfiles.d/10-looking-glass.conf";
-    let content = format!("f /dev/shm/looking-glass 0660 {} kvm -\n", username);
+    let content = format!("f /dev/shm/looking-glass 0660 {} {} 32M\n", username, group);
     if let Ok(_) = fs::write(tmpfile_conf, content) {
         let _ = std::process::Command::new("systemd-tmpfiles").args(["--create"]).output();
     }
@@ -67,16 +72,15 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
 }
 
 pub fn generate_cputune_xml(topology: &CpuTopology) -> String {
-    // We isolate 8 threads on dedicated P-cores for the VM (CPUs 4-11: Core IDs 8, 12, 16, 20)
+    // We isolate 8 threads on dedicated P-cores for the VM (CPUs 4-11: 4 physical P-cores with SMT)
     // We pin emulator and iothreads to E-cores (CPUs 12-15) and Core 0 (CPUs 0-1)
     let p_pinned = if topology.p_core_threads.len() >= 8 {
-        // Pick CPUs 4..12 (8 threads)
         &topology.p_core_threads[4..12]
     } else {
         &topology.p_core_threads[..]
     };
 
-    let mut xml = String::from("  <!-- Generated Deterministic HPC Pinning for i5-13450HX -->\n");
+    let mut xml = String::from("  <!-- Generated Deterministic HPC Topology & Pinning for i5-13450HX -->\n");
     xml.push_str("  <vcpu placement='static'>8</vcpu>\n");
     xml.push_str("  <cputune>\n");
 
@@ -94,6 +98,12 @@ pub fn generate_cputune_xml(topology: &CpuTopology) -> String {
     xml.push_str(&format!("    <emulatorpin cpuset='{}'/>\n", e_str));
     xml.push_str(&format!("    <iothreadpin iothread='1' cpuset='{}'/>\n", e_str));
     xml.push_str("  </cputune>\n");
+
+    // SMT Hyper-Threading CPU definition for Windows 11
+    xml.push_str("  <cpu mode='host-passthrough' check='none' migratable='off'>\n");
+    xml.push_str("    <topology sockets='1' dies='1' clusters='1' cores='4' threads='2'/>\n");
+    xml.push_str("    <cache mode='passthrough'/>\n");
+    xml.push_str("  </cpu>\n");
 
     xml
 }

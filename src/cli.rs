@@ -54,13 +54,20 @@ pub fn show_status() {
         dirty_bg.map(|v| v.to_string()).unwrap_or_else(|| "N/A".to_string())
     );
     println!("    VFS Cache Pressure: {}", vfs_cp.map(|v| v.to_string()).unwrap_or_else(|| "N/A".to_string()));
+    println!("    THP (HugePages):    {}", kernel::get_thp_status());
     println!("    PCIe ASPM Policy:   {}", pcie_aspm);
     println!("--------------------------------------------------------------------------------");
     println!("  [GPU Subsystem]");
     if let Some(gpu) = gpu_status {
         println!("    Model:              {}", gpu.name);
         println!("    Persistence Mode:   {}", if gpu.persistence_mode { "ON [PCIe link & context kept warm]" } else { "OFF [Sleeps when idle]" });
-        println!("    Temperature/Power:  {}°C | {:.1}W / {:.1}W Max Ceiling (TGP Boost)", gpu.temperature_c, gpu.power_w, gpu.max_limit_w);
+        let draw_display = if gpu.power_w <= 0.0 {
+            "Idle / Low-Power".to_string()
+        } else {
+            format!("{:.1}W", gpu.power_w)
+        };
+        println!("    Temperature/Power:  {}°C | {} / {:.1}W (Ceiling: {:.1}W TGP Boost)", 
+            gpu.temperature_c, draw_display, gpu.current_limit_w, gpu.max_limit_w);
     } else {
         println!("    NVIDIA GPU:         Not detected or drivers not bound");
     }

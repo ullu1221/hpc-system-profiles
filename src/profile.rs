@@ -122,30 +122,30 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         ),
     };
 
-    // 1. CPU Governor & EPP
+    // 1. Dell G15 Thermal Mode & PPD synchronization (set first so explicit governor/EPP overrides take precedence)
+    let _ = thermal::set_thermal_mode(therm_mode);
+
+    // 2. Authoritative CPU Governor & EPP
     let _ = cpu::set_governor(gov);
     let _ = cpu::set_epp(epp);
 
-    // 2. C-States Clamping
+    // 3. C-States Clamping
     let _ = cpu::set_cstates_clamp(clamp_cstates);
 
-    // 3. Kernel Split-Lock Mitigation
+    // 4. Kernel Split-Lock Mitigation
     let _ = kernel::set_split_lock_mitigate(split_lock);
 
-    // 4. Virtual Memory Sysctls
+    // 5. Virtual Memory Sysctls
     let _ = kernel::set_vm_sysctl("swappiness", swap);
     let _ = kernel::set_vm_sysctl("dirty_ratio", dirty_r);
     let _ = kernel::set_vm_sysctl("dirty_background_ratio", dirty_bg);
     let _ = kernel::set_vm_sysctl("vfs_cache_pressure", vfs_cp);
 
-    // 5. NVIDIA GPU Persistence Mode
+    // 6. NVIDIA GPU Persistence Mode
     let _ = gpu::set_nvidia_persistence(nv_pm);
 
-    // 6. Wi-Fi Power Management
+    // 7. Wi-Fi Power Management
     let _ = network::set_wifi_power_save(wifi_ps);
-
-    // 7. Dell G15 Thermal Mode
-    let _ = thermal::set_thermal_mode(therm_mode);
 
     // 8. VM Gaming Specific Setup (Looking Glass SHMEM)
     let mut lg_ready = Path::new("/dev/shm/looking-glass").exists();

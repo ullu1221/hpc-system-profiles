@@ -4,20 +4,37 @@ use std::process::Command;
 use crate::types::AppError;
 
 pub fn get_thermal_mode() -> Option<String> {
-    let output = Command::new("dell-g15-thermal").arg("status").output().ok()
-        .or_else(|| Command::new("/home/p/.local/bin/dell-g15-thermal").arg("status").output().ok())
-        .or_else(|| Command::new("/usr/local/bin/dell-g15-thermal").arg("status").output().ok())?;
+    let output = Command::new("g15-sentinel").arg("status").output().ok()
+        .or_else(|| Command::new("/usr/local/bin/g15-sentinel").arg("status").output().ok())
+        .or_else(|| Command::new("/home/p/.local/bin/g15-sentinel").arg("status").output().ok())
+        .or_else(|| Command::new("dell-g15-thermal").arg("status").output().ok())
+        .or_else(|| Command::new("/usr/local/bin/dell-g15-thermal").arg("status").output().ok())
+        .or_else(|| Command::new("/home/p/.local/bin/dell-g15-thermal").arg("status").output().ok())?;
 
     if output.status.success() {
         let text = String::from_utf8_lossy(&output.stdout);
+        let mut mode_str = String::new();
+        let mut gmode_active = false;
+
         for line in text.lines() {
             if line.contains("Native AWCC WMAX Profile:") 
                 || line.contains("Active Thermal Mode:") 
                 || line.contains("Current Mode:") 
             {
                 if let Some(pos) = line.find(':') {
-                    return Some(line[pos + 1..].trim().to_string());
+                    mode_str = line[pos + 1..].trim().to_string();
                 }
+            }
+            if line.contains("Game Shift / G-Mode:") && line.contains("ACTIVE") {
+                gmode_active = true;
+            }
+        }
+
+        if !mode_str.is_empty() {
+            if gmode_active {
+                return Some(format!("{} [G-Mode: ACTIVE (100% Fans)]", mode_str));
+            } else {
+                return Some(mode_str);
             }
         }
     }
@@ -25,30 +42,25 @@ pub fn get_thermal_mode() -> Option<String> {
 }
 
 pub fn set_thermal_mode(mode: &str) -> Result<(), AppError> {
-    let status = Command::new("dell-g15-thermal")
-        .args(["mode", mode])
-        .output();
+    let binaries = [
+        "g15-sentinel",
+        "/usr/local/bin/g15-sentinel",
+        "/home/p/.local/bin/g15-sentinel",
+        "dell-g15-thermal",
+        "/usr/local/bin/dell-g15-thermal",
+        "/home/p/.local/bin/dell-g15-thermal",
+    ];
 
-    match status {
-        Ok(out) if out.status.success() => Ok(()),
-        Ok(out) => {
+    for bin in binaries {
+        if let Ok(out) = Command::new(bin).args(["mode", mode]).output() {
+            if out.status.success() {
+                return Ok(());
+            }
             let err = String::from_utf8_lossy(&out.stderr);
             if err.contains("Permission denied") || err.contains("Operation not permitted") {
-                Err(AppError::PermissionDenied("dell-g15-thermal requires root".to_string()))
-            } else {
-                // If dell-g15-thermal is present but warns, don't fail completely
-                Ok(())
+                return Err(AppError::PermissionDenied(format!("{} requires root or group 'wheel'", bin)));
             }
-        }
-        Err(_) => {
-            // dell-g15-thermal might not be in PATH if run by non-root, try /usr/local/bin or ~/.local/bin
-            for path in &["/usr/local/bin/dell-g15-thermal", "/home/p/.local/bin/dell-g15-thermal"] {
-                if std::path::Path::new(path).exists() {
-                    let _ = Command::new(path).args(["mode", mode]).output();
-                    return Ok(());
-                }
-            }
-            Ok(())
         }
     }
+    Ok(())
 }

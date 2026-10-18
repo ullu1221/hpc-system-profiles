@@ -28,3 +28,27 @@ fn test_profile_display_and_str() {
     assert!(Profile::Battery.display_name().contains("Battery"));
     assert!(Profile::Gaming.display_name().contains("Gaming"));
 }
+
+#[test]
+fn test_vm_xml_generation_intel_compatibility() {
+    use hpc_perf::hardware::cpu::CpuTopology;
+    use hpc_perf::hardware::vm::generate_cputune_xml;
+
+    let dummy_topo = CpuTopology {
+        total_threads: 16,
+        p_core_threads: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        e_core_threads: vec![12, 13, 14, 15],
+        cores: vec![],
+    };
+
+    let xml = generate_cputune_xml(&dummy_topo);
+    assert!(xml.contains("<vcpu placement='static'>8</vcpu>"));
+    assert!(xml.contains("<vcpupin vcpu='0' cpuset='4'/>"));
+    assert!(xml.contains("<vcpupin vcpu='7' cpuset='11'/>"));
+    assert!(xml.contains("<emulatorpin cpuset='12-15'/>"));
+    assert!(xml.contains("<iothreadpin iothread='1' cpuset='12-15'/>"));
+    assert!(xml.contains("<topology sockets='1' dies='1' clusters='1' cores='4' threads='2'/>"));
+    assert!(xml.contains("<cache mode='passthrough'/>"));
+    // Ensure AMD-specific topoext is NOT present
+    assert!(!xml.contains("topoext"));
+}

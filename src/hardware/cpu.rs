@@ -100,21 +100,41 @@ pub fn get_cstates_status() -> Vec<(String, u32, bool)> {
     states
 }
 
+/// Clamps CPU sleep states based on measured latency rather than hardcoded state indices.
+/// Any state with wakeup latency > 10 µs (C2 127 µs, C3 1048 µs, etc.) is disabled when clamped.
+/// States with latency <= 10 µs (POLL 0 µs, C1 1 µs) are strictly preserved for real-time responsiveness.
 pub fn set_cstates_clamp(disable_deep_cstates: bool) -> Result<(), AppError> {
     let val = if disable_deep_cstates { "1" } else { "0" };
-    // We disable state2 (C2) and state3 (C3) which have 127us and 1048us latency
-    for entry in fs::read_dir("/sys/devices/system/cpu")? {
-        let entry = entry?;
-        let name = entry.file_name();
+
+    for cpu_entry in fs::read_dir("/sys/devices/system/cpu")? {
+        let cpu_entry = cpu_entry?;
+        let name = cpu_entry.file_name();
         let name_str = name.to_string_lossy();
         if name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
-            let c2_path = entry.path().join("cpuidle/state2/disable");
-            let c3_path = entry.path().join("cpuidle/state3/disable");
-            if c2_path.exists() {
-                let _ = fs::write(c2_path, val);
-            }
-            if c3_path.exists() {
-                let _ = fs::write(c3_path, val);
+            let cpuidle_dir = cpu_entry.path().join("cpuidle");
+            if cpuidle_dir.exists() {
+                if let Ok(state_entries) = fs::read_dir(&cpuidle_dir) {
+                    for state_entry in state_entries.flatten() {
+                        let s_name = state_entry.file_name();
+                        let s_name_str = s_name.to_string_lossy();
+                        if s_name_str.starts_with("state") {
+                            let lat_path = state_entry.path().join("latency");
+                            let dis_path = state_entry.path().join("disable");
+                            let latency: u32 = fs::read_to_string(&lat_path)
+                                .ok()
+                                .and_then(|s| s.trim().parse().ok())
+                                .unwrap_or(0);
+
+                            // Clamp states with latency > 10 µs (C2, C3, C6, C8, etc.)
+                            if latency > 10 && dis_path.exists() {
+                                let _ = fs::write(&dis_path, val);
+                            } else if latency <= 10 && dis_path.exists() {
+                                // Real-time states POLL (0us) and C1 (1us) must always be enabled
+                                let _ = fs::write(&dis_path, "0");
+                            }
+                        }
+                    }
+                }
             }
         }
     }

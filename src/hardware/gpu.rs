@@ -27,7 +27,7 @@ pub fn get_gpu_status() -> Option<GpuStatus> {
     }
 
     let output = Command::new("nvidia-smi")
-        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw.instant,power.max_limit,enforced.power.limit")
+        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw.instant,power.draw.average,power.max_limit,enforced.power.limit")
         .arg("--format=csv,noheader,nounits")
         .output()
         .ok()?;
@@ -39,20 +39,29 @@ pub fn get_gpu_status() -> Option<GpuStatus> {
     let text = String::from_utf8_lossy(&output.stdout);
     let line = text.lines().next()?;
     let parts: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-    if parts.len() < 6 {
+    if parts.len() < 7 {
         return None;
     }
 
     let name = parts[0].to_string();
     let persistence_mode = parts[1].eq_ignore_ascii_case("Enabled") || parts[1].eq_ignore_ascii_case("On");
     let temperature_c: u32 = parts[2].parse().unwrap_or(0);
-    let mut power_w: f32 = parts[3].parse().unwrap_or(0.0);
-    // Sanitize uncalibrated hardware sensor overflow (e.g. 749W sentinel)
-    if power_w > 150.0 {
-        power_w = 14.5;
-    }
-    let max_limit_w: f32 = parts[4].parse().unwrap_or(95.0);
-    let current_limit_w: f32 = parts[5].parse().unwrap_or(80.0);
+    
+    // Defensive sensor reading: on mobile Ampere chips without external shunt resistors,
+    // power.draw.instant or power.draw can return an uncalibrated 0x2EE7 (749.67W) sentinel.
+    // If instant draw exceeds max physical TGP (95W), we fall back to average power draw.
+    let instant_draw: f32 = parts[3].parse().unwrap_or(0.0);
+    let avg_draw: f32 = parts[4].parse().unwrap_or(0.0);
+    let max_limit_w: f32 = parts[5].parse().unwrap_or(95.0);
+    let current_limit_w: f32 = parts[6].parse().unwrap_or(80.0);
+
+    let power_w = if instant_draw > 0.0 && instant_draw <= max_limit_w + 10.0 {
+        instant_draw
+    } else if avg_draw > 0.0 && avg_draw <= max_limit_w + 10.0 {
+        avg_draw
+    } else {
+        0.0
+    };
 
     Some(GpuStatus {
         name,
@@ -77,7 +86,6 @@ pub fn set_nvidia_persistence(enable: bool) -> Result<(), AppError> {
 
     if !status.status.success() {
         let err_msg = String::from_utf8_lossy(&status.stderr);
-        // If it fails with permission denied, return error
         if err_msg.contains("Permission denied") || err_msg.contains("Root privilege is required") {
             return Err(AppError::PermissionDenied("nvidia-smi -pm requires root privileges".to_string()));
         }
