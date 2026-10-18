@@ -25,7 +25,7 @@ pub fn get_gpu_status() -> Option<GpuStatus> {
     }
 
     let output = Command::new("nvidia-smi")
-        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw,power.limit")
+        .arg("--query-gpu=name,persistence_mode,temperature.gpu,power.draw.instant,enforced.power.limit")
         .arg("--format=csv,noheader,nounits")
         .output()
         .ok()?;
