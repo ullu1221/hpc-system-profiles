@@ -109,14 +109,23 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     };
 
     // Create and pre-allocate 32MB IVSHMEM buffer
-    let file = fs::OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .open(lg_path)?;
+    // In world-writable sticky /dev/shm, fs.protected_regular=1 blocks O_CREAT if file is owned by another user.
+    // If the file exists, open with O_WRONLY directly without O_CREAT.
+    let file = if Path::new(lg_path).exists() {
+        fs::OpenOptions::new()
+            .write(true)
+            .open(lg_path)?
+    } else {
+        fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(false)
+            .open(lg_path)?
+    };
 
     // Sizing to 32MB ensures Looking Glass client and host can map shared memory without resize errors
-    let _ = file.set_len(32 * 1024 * 1024);
+    file.set_len(32 * 1024 * 1024)?;
+    drop(file);
 
     // Set permissions 0660
     let _ = std::process::Command::new("chmod").args(["0660", lg_path]).output();
@@ -129,7 +138,7 @@ pub fn setup_looking_glass_shmem(username: &str) -> Result<(), AppError> {
     let tmpfile_conf = "/etc/tmpfiles.d/10-looking-glass.conf";
     let content = format!("f /dev/shm/looking-glass 0660 {} {} -\n", actual_user, group);
     if fs::write(tmpfile_conf, content).is_ok() {
-        let _ = std::process::Command::new("systemd-tmpfiles").args(["--create"]).output();
+        let _ = std::process::Command::new("systemd-tmpfiles").args(["--create", "/etc/tmpfiles.d/10-looking-glass.conf"]).output();
     }
 
     Ok(())

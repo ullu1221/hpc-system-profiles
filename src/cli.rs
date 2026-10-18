@@ -177,7 +177,7 @@ pub fn verify_cmd() {
 
     let pcie_aspm = kernel::get_pcie_aspm_policy();
     let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming);
-    let is_aspm_clamped = pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE");
+    let is_aspm_clamped = pcie_aspm.starts_with("CLAMPED");
     let aspm_pass = is_aspm_clamped == exp_aspm_clamped;
     print_check(
         "PCIe ASPM Clamped",

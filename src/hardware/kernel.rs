@@ -122,6 +122,13 @@ pub fn clamp_pcie_aspm(disable_aspm: bool) -> Result<usize, AppError> {
         }
     }
 
+    // Sync kernel sysfs policy parameter if available
+    let policy_path = "/sys/module/pcie_aspm/parameters/policy";
+    if Path::new(policy_path).exists() {
+        let val = if disable_aspm { "performance\n" } else { "powersave\n" };
+        let _ = fs::write(policy_path, val);
+    }
+
     // Persist status flag in /var/tmp for non-root queries
     let state_file = "/var/tmp/hpc-aspm-clamped";
     if disable_aspm {
@@ -194,7 +201,9 @@ pub fn get_pcie_aspm_policy() -> String {
 
     if raw.contains("[performance]") {
         "PERFORMANCE (Kernel OS Policy Active)".to_string()
+    } else if raw.contains("[powersave]") || raw.contains("[powersupersave]") || raw.contains("[default]") {
+        format!("UNCLAMPED (Active Kernel Policy: {})", raw)
     } else {
-        raw
+        format!("UNCLAMPED ({})", raw)
     }
 }
