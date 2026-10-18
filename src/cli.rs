@@ -31,6 +31,7 @@ pub fn show_status() {
     println!("  [CPU Subsystem]");
     println!("    Scaling Governor:   {}", current_gov);
     println!("    EPP (Energy Pref):  {}", current_epp);
+    println!("    EPB (Energy Bias):  {}", cpu::get_epb());
     print!("    C-States Status:    ");
     let deep_cstates_disabled = cstates.iter().any(|(_, lat, dis)| *lat > 10 && *dis);
     if deep_cstates_disabled {
@@ -117,6 +118,7 @@ pub fn set_profile_cmd(profile_str: &str) -> Result<(), AppError> {
     println!("[✓] Profile successfully activated!");
     println!("    - CPU Governor:          {}", report.cpu_governor);
     println!("    - CPU EPP:               {}", report.cpu_epp);
+    println!("    - CPU EPB:               {}", report.cpu_epb);
     println!("    - C-States Clamped:      {}", report.cstates_clamped);
     println!("    - Split-Lock Mitigate:   {}", report.split_lock_mitigate);
     println!("    - VM Swappiness:         {}", report.swappiness);
@@ -154,16 +156,24 @@ pub fn verify_cmd() {
     let gpu_status = gpu::get_gpu_status();
     let wifi_ps = network::get_wifi_power_save().unwrap_or(false);
 
-    let (exp_gov, exp_epp, exp_cstates_clamped, exp_split_lock, exp_swap, exp_dirty_r, exp_dirty_bg, exp_vfs_cp, exp_nv_pm, exp_wifi_ps) = match active {
-        Profile::Battery => ("powersave", "power", false, 1, 60, 20, 10, 100, false, true),
-        Profile::Daily => ("powersave", "balance_performance", false, 0, 30, 15, 5, 50, true, true),
-        Profile::Ai => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
-        Profile::Gaming => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
-        Profile::VmGaming => ("performance", "performance", true, 0, 10, 10, 5, 50, true, false),
+    let (exp_gov, exp_epp, exp_epb, exp_cstates_clamped, exp_split_lock, exp_swap, exp_dirty_r, exp_dirty_bg, exp_vfs_cp, exp_nv_pm, exp_wifi_ps) = match active {
+        Profile::Battery => ("powersave", "power", "15 (power)", false, 1, 60, 20, 10, 100, false, true),
+        Profile::Daily => ("powersave", "balance_performance", "6 (normal)", false, 0, 30, 15, 5, 50, true, true),
+        Profile::Ai => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
+        Profile::Gaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
+        Profile::VmGaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
+    };
+
+    let epb = cpu::get_epb();
+    let epb_pass = match active {
+        Profile::Battery => epb.starts_with("15") || epb.starts_with("power"),
+        Profile::Daily => epb.starts_with('6') || epb.starts_with("normal") || epb.starts_with('4'),
+        Profile::Ai | Profile::Gaming | Profile::VmGaming => epb.starts_with('0') || epb.starts_with("performance"),
     };
 
     print_check("CPU Governor", &gov, exp_gov, gov == exp_gov);
     print_check("CPU EPP", &epp, exp_epp, epp == exp_epp);
+    print_check("CPU EPB", &epb, exp_epb, epb_pass);
     print_check("C-States Clamped", &deep_cstates_disabled.to_string(), &exp_cstates_clamped.to_string(), deep_cstates_disabled == exp_cstates_clamped);
     print_check("Split-Lock Mitigate", &split_lock.to_string(), &exp_split_lock.to_string(), split_lock == exp_split_lock);
     print_check("RAM Swappiness", &swap.to_string(), &exp_swap.to_string(), swap == exp_swap);

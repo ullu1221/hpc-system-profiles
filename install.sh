@@ -18,7 +18,7 @@ cargo build --release
 echo "=== [2/5] Deploying Binary to /usr/local/bin and ~/.local/bin ==="
 sudo install -m 755 target/release/hpc-perf /usr/local/bin/hpc-perf
 mkdir -p "${TARGET_HOME}/.local/bin"
-install -m 755 target/release/hpc-perf "${TARGET_HOME}/.local/bin/hpc-perf" 2>/dev/null || true
+ln -sf /usr/local/bin/hpc-perf "${TARGET_HOME}/.local/bin/hpc-perf"
 
 echo "=== [3/5] Configuring Transparent Sudoers Elevation ==="
 echo "${TARGET_USER} ALL=(ALL) NOPASSWD: /usr/local/bin/hpc-perf" | sudo tee /etc/sudoers.d/99-hpc-perf >/dev/null

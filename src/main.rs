@@ -42,9 +42,14 @@ fn elevate_if_needed(cmd: &str) {
     let needs_root = matches!(cmd, "set" | "battery" | "daily" | "ai" | "gaming" | "vm-gaming" | "apply")
         || Profile::parse(cmd).is_some();
     if needs_root && !is_root_user() {
-        let args: Vec<String> = env::args().collect();
+        let target_exe = if std::path::Path::new("/usr/local/bin/hpc-perf").is_file() {
+            std::path::PathBuf::from("/usr/local/bin/hpc-perf")
+        } else {
+            env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("/usr/local/bin/hpc-perf"))
+        };
         let mut sudo_cmd = process::Command::new("sudo");
-        sudo_cmd.args(&args);
+        sudo_cmd.arg(target_exe);
+        sudo_cmd.args(env::args().skip(1));
         match sudo_cmd.status() {
             Ok(status) => process::exit(status.code().unwrap_or(1)),
             Err(e) => {

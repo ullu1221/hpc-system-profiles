@@ -12,6 +12,7 @@ pub struct ApplyReport {
     pub profile: Profile,
     pub cpu_governor: String,
     pub cpu_epp: String,
+    pub cpu_epb: String,
     pub cstates_clamped: bool,
     pub split_lock_mitigate: u32,
     pub swappiness: u64,
@@ -55,10 +56,11 @@ pub fn save_active_profile(profile: Profile) -> Result<(), AppError> {
 
 pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     // Determine target settings
-    let (gov, epp, clamp_cstates, split_lock, swap, dirty_r, dirty_bg, vfs_cp, nv_pm, wifi_ps, therm_mode) = match profile {
+    let (gov, epp, epb, clamp_cstates, split_lock, swap, dirty_r, dirty_bg, vfs_cp, nv_pm, wifi_ps, therm_mode) = match profile {
         Profile::Battery => (
             "powersave",
             "power",
+            "15",
             false, // Deep C-states allowed (saves max power)
             1,     // Split lock mitigate default
             60,    // Standard swappiness
@@ -72,6 +74,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         Profile::Daily => (
             "powersave",
             "balance_performance",
+            "6",
             false,
             0,  // Split lock mitigate disabled (no 10ms spikes)
             30, // Lower swappiness
@@ -85,6 +88,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         Profile::Ai => (
             "performance",
             "performance",
+            "0",
             true, // Disable deep C2/C3 wake stalls
             0,
             10,   // Low swappiness for CUDA/RAM model pinning
@@ -98,6 +102,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         Profile::Gaming => (
             "performance",
             "performance",
+            "0",
             true, // Disable C2/C3 to eliminate 1048us sleep wake stutter
             0,    // Split lock mitigate off (no 10ms frame drops)
             10,   // No game asset paging to swap
@@ -111,6 +116,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         Profile::VmGaming => (
             "performance",
             "performance",
+            "0",
             true, // Clamped C-states
             0,
             10,
@@ -126,9 +132,10 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     // 1. Dell G15 Thermal Mode & PPD synchronization (set first so explicit governor/EPP overrides take precedence)
     let _ = thermal::set_thermal_mode(therm_mode);
 
-    // 2. Authoritative CPU Governor & EPP
+    // 2. Authoritative CPU Governor & EPP & EPB
     let _ = cpu::set_governor(gov);
     let _ = cpu::set_epp(epp);
+    let _ = cpu::set_epb(epb);
 
     // 3. C-States Clamping
     let _ = cpu::set_cstates_clamp(clamp_cstates);
@@ -175,6 +182,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         profile,
         cpu_governor: gov.to_string(),
         cpu_epp: epp.to_string(),
+        cpu_epb: epb.to_string(),
         cstates_clamped: clamp_cstates,
         split_lock_mitigate: split_lock,
         swappiness: swap,

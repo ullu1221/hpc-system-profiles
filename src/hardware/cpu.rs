@@ -71,6 +71,39 @@ pub fn set_epp(epp: &str) -> Result<(), AppError> {
     Ok(())
 }
 
+pub fn get_epb() -> String {
+    let raw = fs::read_to_string("/sys/devices/system/cpu/cpu0/power/energy_perf_bias")
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+    match raw.as_str() {
+        "0" => "0 (performance)".to_string(),
+        "4" => "4 (balance-performance)".to_string(),
+        "6" => "6 (normal)".to_string(),
+        "8" => "8 (balance-power)".to_string(),
+        "15" => "15 (power)".to_string(),
+        _ => raw,
+    }
+}
+
+pub fn set_epb(bias: &str) -> Result<(), AppError> {
+    let mut updated = 0;
+    for entry in fs::read_dir("/sys/devices/system/cpu")? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.len() > 3 && name_str.starts_with("cpu") && name_str[3..].chars().all(|c| c.is_ascii_digit()) {
+            let epb_path = entry.path().join("power/energy_perf_bias");
+            if epb_path.exists() && fs::write(&epb_path, bias).is_ok() {
+                updated += 1;
+            }
+        }
+    }
+    if updated == 0 {
+        return Err(AppError::AttributeMissing("No energy_perf_bias files found".to_string()));
+    }
+    Ok(())
+}
+
 pub fn get_cstates_status() -> Vec<(String, u32, bool)> {
     let mut states = Vec::new();
     let base = Path::new("/sys/devices/system/cpu/cpu0/cpuidle");
