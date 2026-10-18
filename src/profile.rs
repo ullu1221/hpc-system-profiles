@@ -20,6 +20,7 @@ pub struct ApplyReport {
     pub vfs_cache_pressure: u64,
     pub nvidia_persistence: bool,
     pub wifi_power_save: bool,
+    pub pcie_aspm_clamped: bool,
     pub thermal_mode: String,
     pub looking_glass_ready: bool,
 }
@@ -147,7 +148,10 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
     // 7. Wi-Fi Power Management
     let _ = network::set_wifi_power_save(wifi_ps);
 
-    // 8. VM Gaming Specific Setup (Looking Glass SHMEM)
+    // 8. PCIe ASPM Hardware Clamping (eliminates L0s/L1 bus sleep stalls)
+    let _ = kernel::clamp_pcie_aspm(clamp_cstates);
+
+    // 9. VM Gaming Specific Setup (Looking Glass SHMEM)
     let mut lg_ready = Path::new("/dev/shm/looking-glass").exists();
     if profile == Profile::VmGaming {
         let username = std::env::var("SUDO_USER")
@@ -171,6 +175,7 @@ pub fn apply_profile(profile: Profile) -> Result<ApplyReport, AppError> {
         vfs_cache_pressure: vfs_cp,
         nvidia_persistence: nv_pm,
         wifi_power_save: wifi_ps,
+        pcie_aspm_clamped: clamp_cstates,
         thermal_mode: therm_mode.to_string(),
         looking_glass_ready: lg_ready,
     })

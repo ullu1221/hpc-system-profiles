@@ -113,6 +113,7 @@ pub fn set_profile_cmd(profile_str: &str) -> Result<(), AppError> {
     println!("    - VM Swappiness:         {}", report.swappiness);
     println!("    - NVIDIA Persistence:    {}", report.nvidia_persistence);
     println!("    - Wi-Fi Power Save:      {}", report.wifi_power_save);
+    println!("    - PCIe ASPM Clamped:     {}", report.pcie_aspm_clamped);
     println!("    - Dell Thermal Mode:     {}", report.thermal_mode);
     if profile == Profile::VmGaming {
         println!("    - Looking Glass SHMEM:   {}", if report.looking_glass_ready { "READY (/dev/shm/looking-glass)" } else { "FAILED" });
@@ -158,6 +159,20 @@ pub fn verify_cmd() {
         print_check("NVIDIA Persistence", &gpu.persistence_mode.to_string(), &exp_nv_pm.to_string(), gpu.persistence_mode == exp_nv_pm);
     }
     print_check("Wi-Fi Power Save", &wifi_ps.to_string(), &exp_wifi_ps.to_string(), wifi_ps == exp_wifi_ps);
+
+    let pcie_aspm = kernel::get_pcie_aspm_policy();
+    let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming);
+    let aspm_pass = if exp_aspm_clamped {
+        pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE")
+    } else {
+        true
+    };
+    print_check(
+        "PCIe ASPM Clamped",
+        if pcie_aspm.contains("CLAMPED") || pcie_aspm.contains("PERFORMANCE") { "true" } else { "false" },
+        &exp_aspm_clamped.to_string(),
+        aspm_pass,
+    );
 
     let thermal_mode = thermal::get_thermal_mode().unwrap_or_else(|| "unknown".to_string());
     let t_lower = thermal_mode.to_lowercase();
