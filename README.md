@@ -28,23 +28,31 @@ On the Dell G15 5530 (Intel Core i5-13450HX, NVIDIA RTX 3050 6GB Laptop GPU, DDR
 
 ---
 
-## 2. Profile Matrix
+## 2. Profile Matrix & Tier Architecture
 
-`hpc-perf` provides 5 deterministic operational profiles:
+`hpc-perf` organizes system control into 3 distinct operational tiers across 6 profiles:
 
-| Subsystem | `battery` | `daily` (AC) | `ai` (Compute) | `gaming` (Bare-Metal) | `vm-gaming` (VFIO) |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **CPU Governor** | `powersave` | `powersave` | `performance` | `performance` | `performance` |
-| **CPU EPP** | `power` | `balance_performance` | `performance` | `performance` | `performance` |
-| **C-States** | All Active | All Active | **Clamped (0-1 µs)** | **Clamped (0-1 µs)** | **Clamped (0-1 µs)** |
-| **Split-Lock Penalty**| Enabled (1) | **Disabled (0)** | **Disabled (0)** | **Disabled (0)** | **Disabled (0)** |
-| **RAM Swappiness** | 60 | 30 | **10** | **10** | **10** |
-| **Dirty Page Limits** | 20% / 10% | 15% / 5% | **10% / 5%** | **10% / 5%** | **10% / 5%** |
-| **NVIDIA Persistence**| Off | **On** | **On (95W Boost)** | **On (95W Boost)** | **On (95W Boost)** |
-| **Wi-Fi Power Save** | ON | ON | **OFF (1-2ms ping)** | **OFF (1-2ms ping)** | **OFF (1-2ms ping)** |
-| **Dell Thermal Mode** | `quiet` | `balanced` | `performance` | `performance` | `performance` |
-| **Looking Glass SHM** | Ignored | Ignored | Ignored | Ignored | **Configured (`0660 p:kvm`)** |
-| **Target Use Case** | Max battery life | Daily desktop work | LLM, PyTorch, CUDA | Real-time native gaming | QEMU/KVM GPU Passthrough |
+| Subsystem | `battery` [L1] | `daily` [L1] | `ai` [L2] | `gaming` [L2] | `custom` [L2] | `raw` [L3] |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **CPU Governor** | `powersave` | `powersave` | `performance` | `performance` | *Customizable* (`performance`) | `performance` |
+| **CPU EPP** | `power` | `balance_perf` | `performance` | `performance` | *Customizable* (`performance`) | `performance` |
+| **CPU EPB** | `15` | `6` | `0` | `0` | *Customizable* (`0`) | `0` |
+| **C-States** | Unclamped | Unclamped | **Clamped (0-1 µs)** | **Clamped (0-1 µs)** | *Customizable* (**Clamped**) | **Clamped (0-1 µs)** |
+| **Split-Lock Penalty**| Enabled (1) | **Disabled (0)** | **Disabled (0)** | **Disabled (0)** | *Customizable* (**0**) | **Disabled (0)** |
+| **RAM Swappiness** | 60 | 30 | **10** | **10** | *Customizable* (**10**) | **1 (Max RAM residency)** |
+| **Dirty Page Limits** | 20% / 10% | 15% / 5% | **10% / 5%** | **10% / 5%** | *Customizable* (**10% / 5%**) | **5% / 2% (Instant flush)** |
+| **VFS Cache Pressure**| 100 | 50 | **50** | **50** | *Customizable* (**50**) | **10 (Lock dentries)** |
+| **NVIDIA Persistence**| Off | **On** | **On (95W Boost)** | **On (95W Boost)** | *Customizable* (**On**) | **On (Locked 1500-2100MHz)**|
+| **Wi-Fi Power Save** | ON | ON | **OFF (1-2ms ping)** | **OFF (1-2ms ping)** | *Customizable* (**OFF**) | **OFF (1-2ms ping)** |
+| **PCIe ASPM Clamping**| Powersave | Powersave | **Clamped (L0 bus)** | **Clamped (L0 bus)** | *Customizable* (**Clamped**) | **Clamped (L0 bus)** |
+| **Dell Thermal Mode** | `quiet` | `balanced` | `performance` | `performance` | *Customizable* (`performance`) | `gmode` (100% Fans) |
+| **Background Daemons**| Running | Running | Running | Running | *Customizable* (Running) | **Suppressed (Baloo/CUPS paused)** |
+| **Target Use Case** | Acoustic silence & battery | Smooth daily computing | LLM, PyTorch, CUDA | Native zero-lag gaming | User-customized isolated tuning | Bare-metal maximum compute |
+
+### Strict Zero-Leakage Guarantee for `custom`
+The `custom` profile inherits the battle-tested Level 2 Gaming/AI baseline. You have full freedom to override any subset of hardware/kernel parameters via `/etc/hpc-perf-custom.conf` or `~/.config/hpc-perf/custom.conf`.
+
+**Crucially, all custom overrides are strictly constrained to the `custom` profile.** When you switch away from `custom` to any other profile (`daily`, `battery`, `ai`, `gaming`, or `raw`), `hpc-perf` deterministically resets every single subsystem to canonical values (including GPU clock locks, HugePages, sysctls, and daemons), ensuring zero parameter leakage across profiles.
 
 ---
 
@@ -73,18 +81,32 @@ hpc-perf status
 
 ### Switch Profiles On-the-Fly
 ```bash
-# General Daily Use
-hpc-perf battery
+# Level 1: Daily Desktop & Battery Preservation
 hpc-perf daily
+hpc-perf battery
 
-# AI / Deep Learning / CUDA Model Execution
+# Level 2: Interactive High-Performance
 hpc-perf ai
-
-# System-Wide Bare-Metal Gaming (Zero Lag Spikes)
 hpc-perf gaming
+hpc-perf custom
 
-# Virtual Machine Gaming (AutoVirt / Looking Glass / VFIO)
-hpc-perf vm-gaming
+# Level 3: Bare-Metal Extreme Compute
+hpc-perf raw
+```
+
+### Manage Custom Profile
+```bash
+# View active custom configuration and path
+hpc-perf custom config
+
+# Initialize default template configuration
+hpc-perf custom init
+```
+
+### Run Workloads Exclusively Pinned to P-Cores
+```bash
+# Launches process pinned to CPUs 0-11 (4.6 GHz Max IPC)
+hpc-perf run -- <command> [args...]
 ```
 
 ### Audit Alignment Against Active Profile
@@ -99,30 +121,28 @@ hpc-perf vm-pinning
 
 ---
 
-## 5. VM Gaming & Topology Pinning for i5-13450HX
+## 5. Virtualization & Topology Pinning for i5-13450HX
 
 The **Intel Core i5-13450HX** features 6 Performance Cores (12 threads: CPUs 0–11) and 4 Efficient Cores (4 threads: CPUs 12–15).
 
-When running `hpc-perf vm-gaming`, the tool automatically prepares:
-1. **Looking Glass IVSHMEM**: Creates `/dev/shm/looking-glass` with `0660 p:kvm` permissions and persists via `/etc/tmpfiles.d/10-looking-glass.conf`.
-2. **Deterministic CPU Pinning**: Run `hpc-perf vm-pinning` to get the exact XML snippet for Virt-Manager:
-   ```xml
-   <vcpu placement='static'>8</vcpu>
-   <cputune>
-     <vcpupin vcpu='0' cpuset='4'/>
-     <vcpupin vcpu='1' cpuset='5'/>
-     <vcpupin vcpu='2' cpuset='6'/>
-     <vcpupin vcpu='3' cpuset='7'/>
-     <vcpupin vcpu='4' cpuset='8'/>
-     <vcpupin vcpu='5' cpuset='9'/>
-     <vcpupin vcpu='6' cpuset='10'/>
-     <vcpupin vcpu='7' cpuset='11'/>
-     <emulatorpin cpuset='12-15'/>
-     <iothreadpin iothread='1' cpuset='12-15'/>
-   </cputune>
-   ```
-   * **vCPUs 0–7** are pinned exclusively to physical P-Cores (CPUs 4–11) at 4.6 GHz with zero migration.
-   * **Host background emulator and I/O threads** are pinned to E-Cores (CPUs 12–15), preventing host tasks from interrupting virtual machine execution.
+Deterministic CPU Pinning: Run `hpc-perf vm-pinning` to get the exact XML snippet for Virt-Manager / Libvirt:
+```xml
+<vcpu placement='static'>8</vcpu>
+<cputune>
+  <vcpupin vcpu='0' cpuset='4'/>
+  <vcpupin vcpu='1' cpuset='5'/>
+  <vcpupin vcpu='2' cpuset='6'/>
+  <vcpupin vcpu='3' cpuset='7'/>
+  <vcpupin vcpu='4' cpuset='8'/>
+  <vcpupin vcpu='5' cpuset='9'/>
+  <vcpupin vcpu='6' cpuset='10'/>
+  <vcpupin vcpu='7' cpuset='11'/>
+  <emulatorpin cpuset='12-15'/>
+  <iothreadpin iothread='1' cpuset='12-15'/>
+</cputune>
+```
+* **vCPUs 0–7** are pinned exclusively to physical P-Cores (CPUs 4–11) at 4.6 GHz with zero migration.
+* **Host background emulator and I/O threads** are pinned to E-Cores (CPUs 12–15), preventing host tasks from interrupting virtual machine execution.
 
 ---
 

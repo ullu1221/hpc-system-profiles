@@ -15,18 +15,18 @@ fn print_usage() {
     println!("  [Level 2: Mixture of Both / Interactive High-Performance]");
     println!("    ai                Performance governor, clamped C-states, low swappiness, 95W GPU boost");
     println!("    gaming            Performance governor, clamped C-states, 0ms split-lock, Wi-Fi PM off, 95W GPU");
-    println!("    vm-gaming         All gaming tuning + Looking Glass SHMEM setup + dedicated P-core pinning");
+    println!("    custom            Inherits Level 2 baseline; user-tunable via custom.conf with strict zero-leakage isolation");
     println!("  [Level 3: Squeeze Every Single Bit / Raw Bare-Metal Compute]");
     println!("    raw               Full G-Mode 100% fans, locked max clocks, swappiness 1, background daemons paused");
     println!();
     println!("Commands:");
     println!("  status              Display complete system telemetry & profile alignment");
-    println!("  set <profile>       Apply a profile (battery, daily, ai, gaming, vm-gaming, raw)");
+    println!("  set <profile>       Apply a profile (battery, daily, ai, gaming, custom, raw)");
     println!("  battery             Shortcut to apply Daily Battery profile [Level 1]");
     println!("  daily               Shortcut to apply Daily AC / Balanced profile [Level 1]");
     println!("  ai                  Shortcut to apply AI & Compute profile [Level 2]");
     println!("  gaming              Shortcut to apply General Gaming zero-lag profile [Level 2]");
-    println!("  vm-gaming           Shortcut to apply VM Gaming & VFIO profile [Level 2]");
+    println!("  custom [show|init]  Apply Custom profile, or inspect/initialize its config [Level 2]");
     println!("  raw                 Shortcut to apply Raw Bare-Metal Extreme profile [Level 3]");
     println!("  run -- <cmd...>     Execute a compute workload pinned exclusively to 4.6GHz P-Cores (0-11)");
     println!("  apply               Re-apply saved active profile (used at boot)");
@@ -45,7 +45,7 @@ fn is_root_user() -> bool {
 }
 
 fn elevate_if_needed(cmd: &str) {
-    let needs_root = matches!(cmd, "set" | "battery" | "daily" | "ai" | "gaming" | "vm-gaming" | "raw" | "apply")
+    let needs_root = matches!(cmd, "set" | "battery" | "daily" | "ai" | "gaming" | "custom" | "raw" | "apply")
         || Profile::parse(cmd).is_some();
     if needs_root && !is_root_user() {
         let target_exe = if std::path::Path::new("/usr/local/bin/hpc-perf").is_file() {
@@ -81,7 +81,7 @@ fn main() {
             elevate_if_needed("set");
             let profile_name = args.get(2).map(|s| s.as_str()).unwrap_or("");
             if profile_name.is_empty() {
-                eprintln!("Error: Missing profile argument. Usage: hpc-perf set <battery|daily|ai|gaming|vm-gaming|raw>");
+                eprintln!("Error: Missing profile argument. Usage: hpc-perf set <battery|daily|ai|gaming|custom|raw>");
                 process::exit(1);
             }
             if let Err(e) = cli::set_profile_cmd(profile_name) {
@@ -89,7 +89,28 @@ fn main() {
                 process::exit(1);
             }
         }
-        "battery" | "daily" | "ai" | "gaming" | "vm-gaming" | "raw" | "extreme" | "max" | "baremetal" => {
+        "custom" => {
+            let sub_arg = args.get(2).map(|s| s.as_str());
+            match sub_arg {
+                Some("show") | Some("status") | Some("config") => {
+                    cli::show_custom_config_cmd();
+                }
+                Some("init") => {
+                    if let Err(e) = cli::init_custom_config_cmd() {
+                        eprintln!("Error initializing custom config: {}", e);
+                        process::exit(1);
+                    }
+                }
+                _ => {
+                    elevate_if_needed("custom");
+                    if let Err(e) = cli::set_profile_cmd("custom") {
+                        eprintln!("Error: {}", e);
+                        process::exit(1);
+                    }
+                }
+            }
+        }
+        "battery" | "daily" | "ai" | "gaming" | "raw" | "extreme" | "max" | "baremetal" => {
             let target_profile = match command {
                 "extreme" | "max" | "baremetal" => "raw",
                 other => other,

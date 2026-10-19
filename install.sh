@@ -26,10 +26,16 @@ sudo chmod 0440 /etc/sudoers.d/99-hpc-perf
 sudo visudo -cf /etc/sudoers.d/99-hpc-perf
 
 
-echo "=== [4/5] Deploying Systemd Boot Persistence Service ==="
+echo "=== [4/5] Deploying Systemd Boot Persistence Service & Custom Config ==="
 sudo cp systemd/hpc-perf.service /etc/systemd/system/hpc-perf.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now hpc-perf.service
+
+if [[ ! -f /etc/hpc-perf-custom.conf ]]; then
+    sudo /usr/local/bin/hpc-perf custom init
+    sudo chown "${TARGET_USER}:wheel" /etc/hpc-perf-custom.conf
+    sudo chmod 0664 /etc/hpc-perf-custom.conf
+fi
 
 echo "=== [5/5] Installation Complete! Initializing Telemetry ==="
 /usr/local/bin/hpc-perf status

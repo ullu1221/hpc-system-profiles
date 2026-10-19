@@ -1,7 +1,5 @@
 #![forbid(unsafe_code)]
 
-use std::fs;
-use std::path::Path;
 use crate::types::{AppError, Profile};
 use crate::profile::{get_active_profile, apply_profile, CONFIG_PATH};
 use crate::hardware::{cpu, kernel, gpu, network, thermal, vm};
@@ -24,7 +22,7 @@ pub fn show_status() {
 
     let tier_level = match active_profile {
         Profile::Battery | Profile::Daily => "Level 1 (Daily Life)",
-        Profile::Ai | Profile::Gaming | Profile::VmGaming => "Level 2 (Mixture of Both / Interactive High-Performance)",
+        Profile::Ai | Profile::Gaming | Profile::Custom => "Level 2 (Mixture of Both / Interactive High-Performance)",
         Profile::Raw => "Level 3 (Squeeze Every Bit / Raw Bare-Metal Compute)",
     };
 
@@ -34,6 +32,10 @@ pub fn show_status() {
     println!("  Active Profile:       {} [{}]", active_profile.as_str().to_uppercase(), active_profile.display_name());
     println!("  System Tier:          {}", tier_level);
     println!("  Config File:          {}", CONFIG_PATH);
+    if active_profile == Profile::Custom {
+        let custom_cfg = crate::profile::load_custom_config();
+        println!("  Custom Overrides:     Loaded from {}", custom_cfg.config_source);
+    }
     println!("--------------------------------------------------------------------------------");
     println!("  [CPU Subsystem]");
     println!("    Scaling Governor:   {}", current_gov);
@@ -89,7 +91,7 @@ pub fn show_status() {
     });
     println!("    Dell Thermal Mode:  {}", thermal_mode);
     println!("--------------------------------------------------------------------------------");
-    println!("  [VM Gaming & VFIO Passthrough Readiness]");
+    println!("  [Virtualization & VFIO Hardware Telemetry]");
     println!("    IOMMU Groups:       {}", if vm_readiness.iommu_enabled { "ENABLED (/sys/kernel/iommu_groups active)" } else { "DISABLED" });
     let gpu_vfio_desc = if vm_readiness.gpu_driver == "vfio-pci" && vm_readiness.audio_driver == "vfio-pci" {
         format!("ISOLATED FOR VM (Group {} clean; vfio-pci bound to GPU & Audio)", vm_readiness.group_id)
@@ -103,15 +105,14 @@ pub fn show_status() {
     println!("    GPU VFIO Status:    {}", gpu_vfio_desc);
     let hp_count = vm::get_hugepages_2m();
     let hp_str = if hp_count > 0 {
-        format!("ALLOCATED ({} x 2MB = {:.1} GiB reserved for VM)", hp_count, (hp_count as f32 * 2.0) / 1024.0)
+        format!("ALLOCATED ({} x 2MB = {:.1} GiB reserved)", hp_count, (hp_count as f32 * 2.0) / 1024.0)
     } else {
-        "DYNAMIC (0 pages reserved; all 15.3 GiB RAM available for Host)".to_string()
+        "DYNAMIC (0 pages reserved; all RAM available for Host)".to_string()
     };
     println!("    HugePages (2MB):    {}", hp_str);
-    println!("    Looking Glass SHM:  {} ({})", 
-        if vm_readiness.looking_glass_ready { "READY (32MB allocated; user access verified)" } else { "NOT CREATED" },
-        vm_readiness.looking_glass_path
-    );
+    if vm_readiness.looking_glass_ready {
+        println!("    Looking Glass SHM:  READY (32MB allocated; user access verified)");
+    }
     println!("================================================================================");
 }
 
@@ -129,12 +130,14 @@ pub fn set_profile_cmd(profile_str: &str) -> Result<(), AppError> {
     println!("    - C-States Clamped:      {}", report.cstates_clamped);
     println!("    - Split-Lock Mitigate:   {}", report.split_lock_mitigate);
     println!("    - VM Swappiness:         {}", report.swappiness);
+    println!("    - Dirty Ratios:          Ratio: {}% | Background: {}%", report.dirty_ratio, report.dirty_background_ratio);
+    println!("    - VFS Cache Pressure:    {}", report.vfs_cache_pressure);
     println!("    - NVIDIA Persistence:    {}", report.nvidia_persistence);
     println!("    - Wi-Fi Power Save:      {}", report.wifi_power_save);
     println!("    - PCIe ASPM Clamped:     {}", report.pcie_aspm_clamped);
     println!("    - Dell Thermal Mode:     {}", report.thermal_mode);
-    if profile == Profile::VmGaming {
-        println!("    - Looking Glass SHMEM:   {}", if report.looking_glass_ready { "READY (/dev/shm/looking-glass)" } else { "FAILED" });
+    if let Some(src) = &report.custom_source {
+        println!("    - Custom Config:         Loaded from {}", src);
     }
     println!("    - Boot Persistence:      SAVED in {}", CONFIG_PATH);
     Ok(())
@@ -163,23 +166,49 @@ pub fn verify_cmd() {
     let gpu_status = gpu::get_gpu_status();
     let wifi_ps = network::get_wifi_power_save().unwrap_or(false);
 
+    let custom_cfg = if active == Profile::Custom {
+        Some(crate::profile::load_custom_config())
+    } else {
+        None
+    };
+
     let (exp_gov, exp_epp, exp_epb, exp_cstates_clamped, exp_split_lock, exp_swap, exp_dirty_r, exp_dirty_bg, exp_vfs_cp, exp_nv_pm, exp_wifi_ps) = match active {
-        Profile::Battery => ("powersave", "power", "15 (power)", false, 1, 60, 20, 10, 100, false, true),
-        Profile::Daily => ("powersave", "balance_performance", "6 (normal)", false, 0, 30, 15, 5, 50, true, true),
-        Profile::Ai | Profile::Gaming | Profile::VmGaming => ("performance", "performance", "0 (performance)", true, 0, 10, 10, 5, 50, true, false),
-        Profile::Raw => ("performance", "performance", "0 (performance)", true, 0, 1, 5, 2, 10, true, false),
+        Profile::Battery => ("powersave".to_string(), "power".to_string(), "15 (power)".to_string(), false, 1, 60, 20, 10, 100, false, true),
+        Profile::Daily => ("powersave".to_string(), "balance_performance".to_string(), "6 (normal)".to_string(), false, 0, 30, 15, 5, 50, true, true),
+        Profile::Ai | Profile::Gaming => ("performance".to_string(), "performance".to_string(), "0 (performance)".to_string(), true, 0, 10, 10, 5, 50, true, false),
+        Profile::Custom => {
+            let c = custom_cfg.as_ref().unwrap();
+            (
+                c.cpu_governor.clone(),
+                c.cpu_epp.clone(),
+                c.cpu_epb.clone(),
+                c.clamp_cstates,
+                c.split_lock_mitigate,
+                c.swappiness,
+                c.dirty_ratio,
+                c.dirty_background_ratio,
+                c.vfs_cache_pressure,
+                c.nvidia_persistence,
+                c.wifi_power_save,
+            )
+        }
+        Profile::Raw => ("performance".to_string(), "performance".to_string(), "0 (performance)".to_string(), true, 0, 1, 5, 2, 10, true, false),
     };
 
     let epb = cpu::get_epb();
     let epb_pass = match active {
         Profile::Battery => epb.starts_with("15") || epb.starts_with("power"),
         Profile::Daily => epb.starts_with('6') || epb.starts_with("normal") || epb.starts_with('4'),
-        Profile::Ai | Profile::Gaming | Profile::VmGaming | Profile::Raw => epb.starts_with('0') || epb.starts_with("performance"),
+        Profile::Ai | Profile::Gaming | Profile::Raw => epb.starts_with('0') || epb.starts_with("performance"),
+        Profile::Custom => {
+            let target_epb = &custom_cfg.as_ref().unwrap().cpu_epb;
+            epb.starts_with(target_epb) || (target_epb == "0" && epb.starts_with("performance")) || (target_epb == "6" && epb.starts_with("normal")) || (target_epb == "15" && epb.starts_with("power"))
+        }
     };
 
-    print_check("CPU Governor", &gov, exp_gov, gov == exp_gov);
-    print_check("CPU EPP", &epp, exp_epp, epp == exp_epp);
-    print_check("CPU EPB", &epb, exp_epb, epb_pass);
+    print_check("CPU Governor", &gov, &exp_gov, gov == exp_gov);
+    print_check("CPU EPP", &epp, &exp_epp, epp == exp_epp);
+    print_check("CPU EPB", &epb, &exp_epb, epb_pass);
     print_check("C-States Clamped", &deep_cstates_disabled.to_string(), &exp_cstates_clamped.to_string(), deep_cstates_disabled == exp_cstates_clamped);
     print_check("Split-Lock Mitigate", &split_lock.to_string(), &exp_split_lock.to_string(), split_lock == exp_split_lock);
     print_check("RAM Swappiness", &swap.to_string(), &exp_swap.to_string(), swap == exp_swap);
@@ -192,7 +221,11 @@ pub fn verify_cmd() {
     print_check("Wi-Fi Power Save", &wifi_ps.to_string(), &exp_wifi_ps.to_string(), wifi_ps == exp_wifi_ps);
 
     let pcie_aspm = kernel::get_pcie_aspm_policy();
-    let exp_aspm_clamped = matches!(active, Profile::Ai | Profile::Gaming | Profile::VmGaming | Profile::Raw);
+    let exp_aspm_clamped = match active {
+        Profile::Battery | Profile::Daily => false,
+        Profile::Ai | Profile::Gaming | Profile::Raw => true,
+        Profile::Custom => custom_cfg.as_ref().map(|c| c.clamp_pcie_aspm).unwrap_or(true),
+    };
     let is_aspm_clamped = pcie_aspm.starts_with("CLAMPED");
     let aspm_pass = is_aspm_clamped == exp_aspm_clamped;
     print_check(
@@ -207,26 +240,71 @@ pub fn verify_cmd() {
     let (exp_thermal_str, exp_thermal_match) = match active {
         Profile::Battery => ("quiet (0xa3/0xa5)", t_lower.contains("quiet") || t_lower.contains("low-power") || t_lower.contains("0xa3") || t_lower.contains("0xa5")),
         Profile::Daily => ("balanced (0xa0)", (t_lower.contains("balanced") && !t_lower.contains("balanced-performance")) || t_lower.contains("0xa0")),
-        Profile::Ai | Profile::Gaming | Profile::VmGaming => {
+        Profile::Ai | Profile::Gaming => {
             ("performance (0xa1/0xab)", t_lower.contains("performance") || t_lower.contains("0xa1") || t_lower.contains("0xab"))
+        }
+        Profile::Custom => {
+            let target_th = custom_cfg.as_ref().unwrap().thermal_mode.to_lowercase();
+            (
+                "custom-mode",
+                t_lower.contains(&target_th) || (target_th == "performance" && (t_lower.contains("performance") || t_lower.contains("0xa1") || t_lower.contains("0xab"))),
+            )
         }
         Profile::Raw => {
             ("g-mode 100% fans (0xab)", t_lower.contains("g-mode") || t_lower.contains("gmode") || t_lower.contains("0xab") || t_lower.contains("100%"))
         }
     };
     print_check("Dell Thermal Mode", &thermal_mode, exp_thermal_str, exp_thermal_match);
+}
 
-    if active == Profile::VmGaming {
-        let iommu_enabled = Path::new("/sys/kernel/iommu_groups").exists()
-            && fs::read_dir("/sys/kernel/iommu_groups").map(|mut d| d.next().is_some()).unwrap_or(false);
-        print_check("IOMMU Hardware Active", &iommu_enabled.to_string(), "true", iommu_enabled);
-        let lg_ready = Path::new("/dev/shm/looking-glass").metadata()
-            .map(|m| m.len() >= 32 * 1024 * 1024)
-            .unwrap_or(false);
-        print_check("Looking Glass SHMEM", &lg_ready.to_string(), "true", lg_ready);
-        let hp_count = vm::get_hugepages_2m();
-        print_check("HugePages (8GB VM)", &format!("{} pages", hp_count), ">= 4096 pages", hp_count >= 4096);
+pub fn show_custom_config_cmd() {
+    let path = crate::profile::resolve_custom_config_path();
+    println!("================================================================================");
+    println!("                  HPC Custom Profile Configuration Status                       ");
+    println!("================================================================================");
+    println!("  Config File Path:     {}", path.display());
+    println!("  Config Exists:        {}", path.is_file());
+    println!("--------------------------------------------------------------------------------");
+    let cfg = crate::profile::load_custom_config();
+    println!("  Active Custom Settings (Inherits Level 2 Gaming/AI Baseline):");
+    println!("    - CPU Scaling Governor:        {}", cfg.cpu_governor);
+    println!("    - CPU EPP (Energy Pref):       {}", cfg.cpu_epp);
+    println!("    - CPU EPB (Energy Bias):       {}", cfg.cpu_epb);
+    println!("    - C-States Clamped:            {}", cfg.clamp_cstates);
+    println!("    - Kernel Split-Lock Mitigate:  {}", cfg.split_lock_mitigate);
+    println!("    - RAM Swappiness:              {}", cfg.swappiness);
+    println!("    - Dirty Page Ratios:           Ratio: {}% | Background: {}%", cfg.dirty_ratio, cfg.dirty_background_ratio);
+    println!("    - VFS Cache Pressure:          {}", cfg.vfs_cache_pressure);
+    println!("    - NVIDIA Persistence Mode:     {}", cfg.nvidia_persistence);
+    println!("    - NVIDIA GPU Core Clock Lock:  {}", match cfg.gpu_lock_clocks {
+        Some((min, max)) => format!("LOCKED ({} MHz - {} MHz)", min, max),
+        None => "DYNAMIC AUTO BOOST (reset)".to_string(),
+    });
+    println!("    - Wi-Fi Power Save:            {}", cfg.wifi_power_save);
+    println!("    - PCIe ASPM Hardware Clamped:  {}", cfg.clamp_pcie_aspm);
+    println!("    - Dell Thermal Mode:           {}", cfg.thermal_mode);
+    println!("    - Suppress Background Noise:   {}", cfg.suppress_background_services);
+    println!("    - 2MB HugePages:               {}", cfg.hugepages_2m);
+    println!("================================================================================");
+    println!("To edit these parameters, modify: {}", path.display());
+    println!("Or run 'hpc-perf custom init' to generate the template configuration file.");
+}
+
+pub fn init_custom_config_cmd() -> Result<(), AppError> {
+    let path = crate::profile::resolve_custom_config_path();
+    if path.is_file() {
+        println!("[*] Custom config already exists at: {}", path.display());
+        println!("    Edit this file to customize your profile.");
+        return Ok(());
     }
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let template = crate::profile::generate_default_custom_config();
+    std::fs::write(&path, template)?;
+    println!("[✓] Created custom profile template at: {}", path.display());
+    println!("    Edit this file to configure your desired settings, then run 'hpc-perf custom' to apply.");
+    Ok(())
 }
 
 fn print_check(name: &str, current: &str, expected: &str, pass: bool) {

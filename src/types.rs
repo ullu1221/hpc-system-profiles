@@ -8,7 +8,7 @@ pub enum Profile {
     Daily,
     Ai,
     Gaming,
-    VmGaming,
+    Custom,
     Raw,
 }
 
@@ -19,7 +19,7 @@ impl Profile {
             "daily" | "ac" | "balanced" => Some(Profile::Daily),
             "ai" | "compute" | "cuda" => Some(Profile::Ai),
             "gaming" | "game" => Some(Profile::Gaming),
-            "vm-gaming" | "vmgaming" | "vfio" | "autovirt" => Some(Profile::VmGaming),
+            "custom" | "user" | "manual" | "override" => Some(Profile::Custom),
             "raw" | "extreme" | "max" | "baremetal" | "bare-metal" | "squeeze" => Some(Profile::Raw),
             _ => None,
         }
@@ -31,7 +31,7 @@ impl Profile {
             Profile::Daily => "daily",
             Profile::Ai => "ai",
             Profile::Gaming => "gaming",
-            Profile::VmGaming => "vm-gaming",
+            Profile::Custom => "custom",
             Profile::Raw => "raw",
         }
     }
@@ -42,7 +42,7 @@ impl Profile {
             Profile::Daily => "Daily AC / Balanced (Smooth Desktop Performance) [Level 1]",
             Profile::Ai => "AI & Compute (Max CUDA/Compute & Memory Streaming) [Level 2]",
             Profile::Gaming => "General Gaming (Real-Time Zero-Lag & Clamped C-States) [Level 2]",
-            Profile::VmGaming => "VM Gaming (VFIO Passthrough, P-Core Pinning & IVSHMEM) [Level 2]",
+            Profile::Custom => "Custom User Profile (Fully Tunable & Strictly Isolated) [Level 2]",
             Profile::Raw => "Raw Bare-Metal & Extreme Compute (Zero Bloat, G-Mode 100% Fans, Clamped Max Clocks) [Level 3]",
         }
     }
@@ -68,7 +68,7 @@ impl fmt::Display for AppError {
         match self {
             AppError::Io(e) => write!(f, "I/O Error: {}", e),
             AppError::PermissionDenied(s) => write!(f, "Permission Denied: {}", s),
-            AppError::InvalidProfile(s) => write!(f, "Invalid Profile: '{}'. Valid options: battery, daily, ai, gaming, vm-gaming", s),
+            AppError::InvalidProfile(s) => write!(f, "Invalid Profile: '{}'. Valid options: battery, daily, ai, gaming, custom, raw", s),
             AppError::CommandFailed(s) => write!(f, "Execution Error: {}", s),
             AppError::AttributeMissing(s) => write!(f, "Hardware Attribute Not Found: {}", s),
         }
