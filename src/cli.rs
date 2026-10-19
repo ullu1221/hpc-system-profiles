@@ -258,6 +258,27 @@ pub fn run_pinned(cmd_args: &[String]) {
         eprintln!("Usage: hpc-perf run -- <command> [args...]");
         std::process::exit(1);
     }
+
+    // OPSEC & Privilege Boundary Guard:
+    // Never allow running arbitrary child workloads with elevated root privileges.
+    if std::env::var_os("SUDO_UID").is_some() || std::env::var_os("SUDO_USER").is_some() {
+        eprintln!("[!] Security Violation: 'hpc-perf run' must NOT be executed with sudo privileges.");
+        eprintln!("    Run 'hpc-perf run -- <command>' directly as your unprivileged user.");
+        std::process::exit(1);
+    }
+
+    if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
+        for line in status.lines() {
+            if line.starts_with("Uid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() > 2 && parts[2] == "0" {
+                    eprintln!("[!] Security Violation: 'hpc-perf run' cannot be executed by the root user.");
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+
     let command = &cmd_args[0];
     let args = &cmd_args[1..];
 
@@ -277,3 +298,4 @@ pub fn run_pinned(cmd_args: &[String]) {
         }
     }
 }
+

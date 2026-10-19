@@ -20,9 +20,11 @@ sudo install -m 755 target/release/hpc-perf /usr/local/bin/hpc-perf
 mkdir -p "${TARGET_HOME}/.local/bin"
 ln -sf /usr/local/bin/hpc-perf "${TARGET_HOME}/.local/bin/hpc-perf"
 
-echo "=== [3/5] Configuring Transparent Sudoers Elevation ==="
-echo "${TARGET_USER} ALL=(ALL) NOPASSWD: /usr/local/bin/hpc-perf" | sudo tee /etc/sudoers.d/99-hpc-perf >/dev/null
+echo "=== [3/5] Configuring Hardened Sudoers Elevation (Safe Subcommands Only) ==="
+sudo cp sudoers/99-hpc-perf /etc/sudoers.d/99-hpc-perf
 sudo chmod 0440 /etc/sudoers.d/99-hpc-perf
+sudo visudo -cf /etc/sudoers.d/99-hpc-perf
+
 
 echo "=== [4/5] Deploying Systemd Boot Persistence Service ==="
 sudo cp systemd/hpc-perf.service /etc/systemd/system/hpc-perf.service

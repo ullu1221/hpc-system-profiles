@@ -1,2 +1,3 @@
-# Transparent elevation for HPC System Performance Profile Controller
-%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/hpc-perf
+# Hardened elevation for HPC System Performance Profile Controller (Excludes arbitrary workload execution)
+%wheel ALL=(ALL) NOPASSWD: /usr/local/bin/hpc-perf daily, /usr/local/bin/hpc-perf battery, /usr/local/bin/hpc-perf ai, /usr/local/bin/hpc-perf gaming, /usr/local/bin/hpc-perf vm-gaming, /usr/local/bin/hpc-perf raw, /usr/local/bin/hpc-perf apply, /usr/local/bin/hpc-perf status, /usr/local/bin/hpc-perf verify, /usr/local/bin/hpc-perf vm-pinning
+
